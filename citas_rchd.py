@@ -1,7 +1,7 @@
-# Generador de citas en formato jurídico tradicional chileno (RChD 2025)
-# Desarrollado para la Consejería Académica de Derecho UC
+# citador_streamlit.py
+import streamlit as st
 
-import textwrap
+st.set_page_config(page_title="Generador de Citas Jurídicas RChD 2025", page_icon="⚖️")
 
 def versalitas(texto):
     return texto.upper()
@@ -13,163 +13,131 @@ def dividir_nombre(autor):
     else:
         return autor, ""
 
-# --------------------------- FORMATOS DE CITA ---------------------------
+st.title("⚖️ Generador de Citas Jurídicas - RChD 2025")
+st.subheader("Consejería Académica Derecho UC")
 
-def formatear_cita_libro():
-    print("\n📘 Libro")
-    autor = input("Autor(es): ")
-    año = input("Año: ")
-    titulo = input("Título del libro: ")
-    ciudad = input("Ciudad: ")
-    editorial = input("Editorial: ")
-    edicion = input("Edición (dejar vacío si es la primera): ")
-    apellidos, nombre = dividir_nombre(autor)
-    cita = f"{versalitas(apellidos)}"
-    if nombre: cita += f", {nombre}"
-    cita += f" ({año}): *{titulo}* ({ciudad}, {editorial}"
-    if edicion: cita += f", {edicion}"
-    cita += ")."
-    return cita
+tipo = st.selectbox("Selecciona el tipo de fuente:", [
+    "Libro", "Artículo de revista", "Capítulo de libro", "Ley o norma jurídica",
+    "Sentencia o jurisprudencia", "Tesis o memoria", "Sitio web / noticia digital", "Tratado internacional"
+])
 
-def formatear_cita_articulo():
-    print("\n📰 Artículo de revista")
-    autor = input("Autor(es): ")
-    año = input("Año: ")
-    titulo = input("Título del artículo: ")
-    revista = input("Nombre de la revista: ")
-    volumen = input("Volumen: ")
-    numero = input("Número: ")
-    paginas = input("Páginas (ej: 93-107): ")
-    apellidos, nombre = dividir_nombre(autor)
-    cita = f"{versalitas(apellidos)}"
-    if nombre: cita += f", {nombre}"
-    cita += f" ({año}): \"{titulo}\", *{revista}*"
-    if volumen: cita += f", vol. {volumen}"
-    if numero: cita += f", N° {numero}"
-    if paginas: cita += f": pp. {paginas}"
-    cita += "."
-    return cita
+# Aquí definimos el contenido dinámico según tipo
+if tipo == "Libro":
+    autor = st.text_input("Autor(es)")
+    año = st.text_input("Año")
+    titulo = st.text_input("Título del libro")
+    ciudad = st.text_input("Ciudad")
+    editorial = st.text_input("Editorial")
+    edicion = st.text_input("Edición (dejar vacío si es la primera)")
+    if st.button("Generar cita"):
+        apellidos, nombre = dividir_nombre(autor)
+        cita = f"{versalitas(apellidos)}"
+        if nombre: cita += f", {nombre}"
+        cita += f" ({año}): *{titulo}* ({ciudad}, {editorial}"
+        if edicion: cita += f", {edicion}"
+        cita += ")."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_capitulo():
-    print("\n📚 Capítulo de libro")
-    autor = input("Autor del capítulo: ")
-    año = input("Año: ")
-    titulo = input("Título del capítulo: ")
-    editor = input("Editor del libro: ")
-    libro = input("Título del libro: ")
-    ciudad = input("Ciudad: ")
-    editorial = input("Editorial: ")
-    paginas = input("Páginas: ")
-    apellidos, nombre = dividir_nombre(autor)
-    cita = f"{versalitas(apellidos)}"
-    if nombre: cita += f", {nombre}"
-    cita += f" ({año}): \"{titulo}\", en {editor} (edit.), *{libro}* ({ciudad}, {editorial}) pp. {paginas}."
-    return cita
+elif tipo == "Artículo de revista":
+    autor = st.text_input("Autor(es)")
+    año = st.text_input("Año")
+    titulo = st.text_input("Título del artículo")
+    revista = st.text_input("Nombre de la revista")
+    volumen = st.text_input("Volumen")
+    numero = st.text_input("Número")
+    paginas = st.text_input("Páginas (ej: 93-107)")
+    if st.button("Generar cita"):
+        apellidos, nombre = dividir_nombre(autor)
+        cita = f"{versalitas(apellidos)}"
+        if nombre: cita += f", {nombre}"
+        cita += f" ({año}): \"{titulo}\", *{revista}*"
+        if volumen: cita += f", vol. {volumen}"
+        if numero: cita += f", N° {numero}"
+        if paginas: cita += f": pp. {paginas}"
+        cita += "."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_ley():
-    print("\n⚖️ Ley o norma jurídica")
-    pais = input("País: ")
-    tipo = input("Tipo (Ley, Código, DS...): ")
-    numero = input("Número o nombre: ")
-    fecha = input("Fecha (dd/mm/aaaa): ")
-    nombre = input("Nombre oficial (opcional): ")
-    cita = f"{versalitas(pais)}, {tipo} {numero} ({fecha})"
-    if nombre: cita += f". *{nombre}*"
-    cita += "."
-    return cita
+elif tipo == "Capítulo de libro":
+    autor = st.text_input("Autor del capítulo")
+    año = st.text_input("Año")
+    titulo = st.text_input("Título del capítulo")
+    editor = st.text_input("Editor del libro")
+    libro = st.text_input("Título del libro")
+    ciudad = st.text_input("Ciudad")
+    editorial = st.text_input("Editorial")
+    paginas = st.text_input("Páginas")
+    if st.button("Generar cita"):
+        apellidos, nombre = dividir_nombre(autor)
+        cita = f"{versalitas(apellidos)}"
+        if nombre: cita += f", {nombre}"
+        cita += f" ({año}): \"{titulo}\", en {editor} (edit.), *{libro}* ({ciudad}, {editorial}) pp. {paginas}."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_sentencia():
-    print("\n📄 Sentencia o jurisprudencia")
-    tribunal = input("Tribunal: ")
-    fecha = input("Fecha: ")
-    rol = input("Rol o RUC/RIT: ")
-    tipo_proc = input("Tipo procedimiento: ")
-    nombre_fantasia = input("Nombre del caso (opcional): ")
-    cita = f"{tribunal}, {fecha}, rol {rol}, {tipo_proc}"
-    if nombre_fantasia: cita += f" ({nombre_fantasia})"
-    cita += "."
-    return cita
+elif tipo == "Ley o norma jurídica":
+    pais = st.text_input("País")
+    tipo_norma = st.text_input("Tipo (Ley, Código, DS...)")
+    numero = st.text_input("Número o nombre")
+    fecha = st.text_input("Fecha (dd/mm/aaaa)")
+    nombre = st.text_input("Nombre oficial (opcional)")
+    if st.button("Generar cita"):
+        cita = f"{versalitas(pais)}, {tipo_norma} {numero} ({fecha})"
+        if nombre: cita += f". *{nombre}*"
+        cita += "."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_tesis():
-    print("\n🎓 Tesis o memoria académica")
-    autor = input("Autor: ")
-    año = input("Año: ")
-    titulo = input("Título: ")
-    universidad = input("Universidad: ")
-    grado = input("Grado académico: ")
-    apellidos, nombre = dividir_nombre(autor)
-    cita = f"{versalitas(apellidos)}"
-    if nombre: cita += f", {nombre}"
-    cita += f" ({año}): *{titulo}*. Memoria para optar al grado de {grado}, {universidad}."
-    return cita
+elif tipo == "Sentencia o jurisprudencia":
+    tribunal = st.text_input("Tribunal")
+    fecha = st.text_input("Fecha")
+    rol = st.text_input("Rol o RUC/RIT")
+    tipo_proc = st.text_input("Tipo procedimiento")
+    nombre_fantasia = st.text_input("Nombre del caso (opcional)")
+    if st.button("Generar cita"):
+        cita = f"{tribunal}, {fecha}, rol {rol}, {tipo_proc}"
+        if nombre_fantasia: cita += f" ({nombre_fantasia})"
+        cita += "."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_web():
-    print("\n🌐 Sitio web o columna digital")
-    autor = input("Autor: ")
-    año = input("Año: ")
-    titulo = input("Título: ")
-    medio = input("Nombre del sitio o medio: ")
-    url = input("URL: ")
-    fecha_consulta = input("Fecha de consulta (dd/mm/aaaa): ")
-    apellidos, nombre = dividir_nombre(autor)
-    cita = f"{versalitas(apellidos)}"
-    if nombre: cita += f", {nombre}"
-    cita += f" ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
-    return cita
+elif tipo == "Tesis o memoria":
+    autor = st.text_input("Autor")
+    año = st.text_input("Año")
+    titulo = st.text_input("Título")
+    universidad = st.text_input("Universidad")
+    grado = st.text_input("Grado académico")
+    if st.button("Generar cita"):
+        apellidos, nombre = dividir_nombre(autor)
+        cita = f"{versalitas(apellidos)}"
+        if nombre: cita += f", {nombre}"
+        cita += f" ({año}): *{titulo}*. Memoria para optar al grado de {grado}, {universidad}."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-def formatear_cita_tratado():
-    print("\n🌍 Tratado internacional")
-    nombre = input("Nombre del tratado: ")
-    fecha = input("Fecha de adopción (dd/mm/aaaa): ")
-    fuente = input("Fuente (opcional): ")
-    cita = f"{versalitas(nombre)} ({fecha})"
-    if fuente: cita += f". {fuente}"
-    cita += "."
-    return cita
+elif tipo == "Sitio web / noticia digital":
+    autor = st.text_input("Autor")
+    año = st.text_input("Año")
+    titulo = st.text_input("Título")
+    medio = st.text_input("Nombre del sitio o medio")
+    url = st.text_input("URL")
+    fecha_consulta = st.text_input("Fecha de consulta (dd/mm/aaaa)")
+    if st.button("Generar cita"):
+        apellidos, nombre = dividir_nombre(autor)
+        cita = f"{versalitas(apellidos)}"
+        if nombre: cita += f", {nombre}"
+        cita += f" ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
+        st.success("📌 Cita generada:")
+        st.code(cita)
 
-# --------------------------- INTERFAZ PRINCIPAL ---------------------------
-
-def menu():
-    print(textwrap.dedent("""
-    ------------------------------------------
-    GENERADOR DE CITAS RChD 2025
-    Consejería Académica Derecho UC
-    ------------------------------------------
-    1. Libro
-    2. Artículo de revista
-    3. Capítulo de libro
-    4. Ley o norma
-    5. Sentencia o jurisprudencia
-    6. Tesis o memoria
-    7. Sitio web / noticia digital
-    8. Tratado internacional
-    9. Salir
-    """))
-
-def main():
-    while True:
-        menu()
-        opcion = input("👉 Opción (1-9): ")
-
-        if opcion == "1": cita = formatear_cita_libro()
-        elif opcion == "2": cita = formatear_cita_articulo()
-        elif opcion == "3": cita = formatear_cita_capitulo()
-        elif opcion == "4": cita = formatear_cita_ley()
-        elif opcion == "5": cita = formatear_cita_sentencia()
-        elif opcion == "6": cita = formatear_cita_tesis()
-        elif opcion == "7": cita = formatear_cita_web()
-        elif opcion == "8": cita = formatear_cita_tratado()
-        elif opcion == "9":
-            print("\n👋 ¡Gracias por usar el generador!")
-            break
-        else:
-            print("❌ Opción inválida. Intenta de nuevo.\n")
-            continue
-
-        print("\n📌 Cita generada:")
-        print("------------------------------------------")
-        print(cita)
-        print("------------------------------------------\n")
-
-if __name__ == "__main__":
-    main()
+elif tipo == "Tratado internacional":
+    nombre = st.text_input("Nombre del tratado")
+    fecha = st.text_input("Fecha de adopción (dd/mm/aaaa)")
+    fuente = st.text_input("Fuente (opcional)")
+    if st.button("Generar cita"):
+        cita = f"{versalitas(nombre)} ({fecha})"
+        if fuente: cita += f". {fuente}"
+        cita += "."
+        st.success("📌 Cita generada:")
+        st.code(cita)

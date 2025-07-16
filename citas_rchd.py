@@ -1,5 +1,6 @@
 # citador_streamlit.py
 import streamlit as st
+import re
 
 st.set_page_config(page_title="Generador de Citas Jurídicas RChD 2025", page_icon="⚖️")
 
@@ -7,11 +8,16 @@ def versalitas(texto):
     return texto.upper()
 
 def dividir_nombre(autor):
-    if ' ' in autor:
-        partes = autor.strip().rsplit(' ', 1)
-        return partes[0], partes[1]
+    partes = autor.strip().split(' ')
+    if len(partes) == 2:
+        return partes[1], partes[0]
+    elif len(partes) > 2:
+        return ' '.join(partes[1:]), partes[0]
     else:
         return autor, ""
+
+def strip_tags(texto):
+    return re.sub('<[^<]+?>', '', texto)
 
 st.title("⚖️ Generador de Citas Jurídicas - RChD 2025")
 st.subheader("Consejería Académica Derecho UC")
@@ -30,12 +36,14 @@ if tipo == "Libro":
     edicion = st.text_input("Edición (dejar vacío si es la primera)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}, {nombre} ({año}): *{titulo}* ({ciudad}, {editorial}"
+        cita = f"<b>{versalitas(apellidos)}</b>, {nombre} ({año}): <em>{titulo}</em> ({ciudad}, {editorial}"
         if edicion:
             cita += f", {edicion} edición"
         cita += ")."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Artículo de revista":
     autor = st.text_input("Autor(es)")
@@ -47,7 +55,7 @@ elif tipo == "Artículo de revista":
     paginas = st.text_input("Páginas (ej: 93-107)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", *{revista}*"
+        cita = f"<b>{versalitas(apellidos)}</b>, {nombre} ({año}): \"{titulo}\", <em>{revista}</em>"
         if volumen:
             cita += f", vol. {volumen}"
         if numero:
@@ -55,8 +63,10 @@ elif tipo == "Artículo de revista":
         if paginas:
             cita += f": pp. {paginas}"
         cita += "."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Capítulo de libro":
     autor = st.text_input("Autor del capítulo")
@@ -69,9 +79,11 @@ elif tipo == "Capítulo de libro":
     paginas = st.text_input("Páginas")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", en {editor} (edit.), *{libro}* ({ciudad}, {editorial}) pp. {paginas}."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        cita = f"<b>{versalitas(apellidos)}</b>, {nombre} ({año}): \"{titulo}\", en {editor} (edit.), <em>{libro}</em> ({ciudad}, {editorial}) pp. {paginas}."
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Ley o norma jurídica":
     pais = st.text_input("País")
@@ -80,12 +92,14 @@ elif tipo == "Ley o norma jurídica":
     fecha = st.text_input("Fecha (dd/mm/aaaa)")
     nombre = st.text_input("Nombre oficial (opcional)")
     if st.button("Generar cita"):
-        cita = f"{versalitas(pais)}, {tipo_norma} {numero} ({fecha})"
+        cita = f"<b>{versalitas(pais)}</b>, {tipo_norma} {numero} ({fecha})"
         if nombre:
-            cita += f". *{nombre}*"
+            cita += f". <em>{nombre}</em>"
         cita += "."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Sentencia o jurisprudencia":
     tribunal = st.text_input("Tribunal")
@@ -98,8 +112,10 @@ elif tipo == "Sentencia o jurisprudencia":
         if nombre_fantasia:
             cita += f" ({nombre_fantasia})"
         cita += "."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        st.markdown("📌 Cita generada:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Tesis o memoria":
     autor = st.text_input("Autor")
@@ -109,9 +125,11 @@ elif tipo == "Tesis o memoria":
     grado = st.text_input("Grado académico")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}, {nombre} ({año}): *{titulo}*. Memoria para optar al grado de {grado}, {universidad}."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        cita = f"<b>{versalitas(apellidos)}</b>, {nombre} ({año}): <em>{titulo}</em>. Memoria para optar al grado de {grado}, {universidad}."
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Sitio web / noticia digital":
     autor = st.text_input("Autor")
@@ -122,18 +140,22 @@ elif tipo == "Sitio web / noticia digital":
     fecha_consulta = st.text_input("Fecha de consulta (dd/mm/aaaa)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        cita = f"<b>{versalitas(apellidos)}</b>, {nombre} ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))
 
 elif tipo == "Tratado internacional":
     nombre = st.text_input("Nombre del tratado")
     fecha = st.text_input("Fecha de adopción (dd/mm/aaaa)")
     fuente = st.text_input("Fuente (opcional)")
     if st.button("Generar cita"):
-        cita = f"{versalitas(nombre)} ({fecha})"
+        cita = f"<b>{versalitas(nombre)}</b> ({fecha})"
         if fuente:
             cita += f". {fuente}"
         cita += "."
-        st.success("📌 Cita generada:")
-        st.code(cita)
+        st.markdown("📌 Cita generada con formato visual:", unsafe_allow_html=True)
+        st.markdown(cita, unsafe_allow_html=True)
+        st.text("📋 Cita para copiar y pegar:")
+        st.code(strip_tags(cita))

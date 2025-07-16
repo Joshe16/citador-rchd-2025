@@ -21,7 +21,6 @@ tipo = st.selectbox("Selecciona el tipo de fuente:", [
     "Sentencia o jurisprudencia", "Tesis o memoria", "Sitio web / noticia digital", "Tratado internacional"
 ])
 
-# Aquí definimos el contenido dinámico según tipo
 if tipo == "Libro":
     autor = st.text_input("Autor(es)")
     año = st.text_input("Año")
@@ -31,10 +30,9 @@ if tipo == "Libro":
     edicion = st.text_input("Edición (dejar vacío si es la primera)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}"
-        if nombre: cita += f", {nombre}"
-        cita += f" ({año}): *{titulo}* ({ciudad}, {editorial}"
-        if edicion: cita += f", {edicion}"
+        cita = f"{versalitas(apellidos)}, {nombre} ({año}): *{titulo}* ({ciudad}, {editorial}"
+        if edicion:
+            cita += f", {edicion} edición"
         cita += ")."
         st.success("📌 Cita generada:")
         st.code(cita)
@@ -49,12 +47,13 @@ elif tipo == "Artículo de revista":
     paginas = st.text_input("Páginas (ej: 93-107)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}"
-        if nombre: cita += f", {nombre}"
-        cita += f" ({año}): \"{titulo}\", *{revista}*"
-        if volumen: cita += f", vol. {volumen}"
-        if numero: cita += f", N° {numero}"
-        if paginas: cita += f": pp. {paginas}"
+        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", *{revista}*"
+        if volumen:
+            cita += f", vol. {volumen}"
+        if numero:
+            cita += f", N° {numero}"
+        if paginas:
+            cita += f": pp. {paginas}"
         cita += "."
         st.success("📌 Cita generada:")
         st.code(cita)
@@ -70,9 +69,7 @@ elif tipo == "Capítulo de libro":
     paginas = st.text_input("Páginas")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}"
-        if nombre: cita += f", {nombre}"
-        cita += f" ({año}): \"{titulo}\", en {editor} (edit.), *{libro}* ({ciudad}, {editorial}) pp. {paginas}."
+        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", en {editor} (edit.), *{libro}* ({ciudad}, {editorial}) pp. {paginas}."
         st.success("📌 Cita generada:")
         st.code(cita)
 
@@ -84,7 +81,8 @@ elif tipo == "Ley o norma jurídica":
     nombre = st.text_input("Nombre oficial (opcional)")
     if st.button("Generar cita"):
         cita = f"{versalitas(pais)}, {tipo_norma} {numero} ({fecha})"
-        if nombre: cita += f". *{nombre}*"
+        if nombre:
+            cita += f". *{nombre}*"
         cita += "."
         st.success("📌 Cita generada:")
         st.code(cita)
@@ -97,7 +95,8 @@ elif tipo == "Sentencia o jurisprudencia":
     nombre_fantasia = st.text_input("Nombre del caso (opcional)")
     if st.button("Generar cita"):
         cita = f"{tribunal}, {fecha}, rol {rol}, {tipo_proc}"
-        if nombre_fantasia: cita += f" ({nombre_fantasia})"
+        if nombre_fantasia:
+            cita += f" ({nombre_fantasia})"
         cita += "."
         st.success("📌 Cita generada:")
         st.code(cita)
@@ -110,9 +109,7 @@ elif tipo == "Tesis o memoria":
     grado = st.text_input("Grado académico")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}"
-        if nombre: cita += f", {nombre}"
-        cita += f" ({año}): *{titulo}*. Memoria para optar al grado de {grado}, {universidad}."
+        cita = f"{versalitas(apellidos)}, {nombre} ({año}): *{titulo}*. Memoria para optar al grado de {grado}, {universidad}."
         st.success("📌 Cita generada:")
         st.code(cita)
 
@@ -125,9 +122,7 @@ elif tipo == "Sitio web / noticia digital":
     fecha_consulta = st.text_input("Fecha de consulta (dd/mm/aaaa)")
     if st.button("Generar cita"):
         apellidos, nombre = dividir_nombre(autor)
-        cita = f"{versalitas(apellidos)}"
-        if nombre: cita += f", {nombre}"
-        cita += f" ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
+        cita = f"{versalitas(apellidos)}, {nombre} ({año}): \"{titulo}\", {medio}. Disponible en: {url}. Fecha de consulta: {fecha_consulta}."
         st.success("📌 Cita generada:")
         st.code(cita)
 
@@ -137,7 +132,8 @@ elif tipo == "Tratado internacional":
     fuente = st.text_input("Fuente (opcional)")
     if st.button("Generar cita"):
         cita = f"{versalitas(nombre)} ({fecha})"
-        if fuente: cita += f". {fuente}"
+        if fuente:
+            cita += f". {fuente}"
         cita += "."
         st.success("📌 Cita generada:")
         st.code(cita)

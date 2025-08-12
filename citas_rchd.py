@@ -1,7 +1,12 @@
 import streamlit as st
-from bs4 import BeautifulSoup
 
 # Funciones de formato
+
+import re
+
+def limpiar_html_a_texto(html_text):
+    clean = re.sub('<.*?>', '', html_text)
+    return clean
 
 def versalitas(texto):
     return texto.upper() if texto else ""
@@ -482,5 +487,6 @@ if "historial" in st.session_state and st.session_state["historial"]:
             st.write(ref)
         st.markdown(f"**Cita abreviada:** {cita}")
         st.markdown("")
+
 
 

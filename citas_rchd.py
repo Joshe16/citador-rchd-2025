@@ -12,7 +12,8 @@ def limpiar_html_a_texto(html):
     text = re.sub(r'<.*?>', '', html)
     return text.strip()
 
-def formatear_autores_html(autores):
+# ------------------ AUTORES ------------------
+def formatear_autores_html(autores, tipo="general"):
     """Devuelve string HTML para la referencia completa"""
     n = len(autores)
     if n == 0:
@@ -22,25 +23,36 @@ def formatear_autores_html(autores):
         if a['apellido2']:
             ap += f" {versalitas(a['apellido2'])}"
         return f"{ap}, {a['nombre']}"
-    if n == 1:
-        return formato(autores[0])
-    elif 2 <= n <= 3:
-        return " y ".join(formato(a) for a in autores)
-    else:
+    
+    # Regla especial para libros: si >3 autores, solo el primero + otros
+    if tipo == "Libro" and n > 3:
         return f"{formato(autores[0])} y otros"
+    else:
+        if n == 1:
+            return formato(autores[0])
+        elif 2 <= n <= 3:
+            return " y ".join(formato(a) for a in autores)
+        else:
+            return f"{formato(autores[0])} y otros"
 
-def cita_abreviada(autores, año, paginas=None):
+def cita_abreviada(autores, año, paginas=None, tipo="general"):
     """Devuelve la cita abreviada según número de autores"""
     n = len(autores)
     if n == 0:
         return f"({año})"
-    elif n == 1:
-        return f"{versalitas(autores[0]['apellido1'])} ({año})" + (f", p. {paginas}" if paginas else "")
-    elif 2 <= n <= 3:
-        aps = " y ".join([versalitas(a['apellido1']) for a in autores])
-        return f"{aps} ({año})" + (f", p. {paginas}" if paginas else "")
+    if tipo == "Libro" and n > 3:
+        base = f"{versalitas(autores[0]['apellido1'])} y otros ({año})"
     else:
-        return f"{versalitas(autores[0]['apellido1'])} y otros ({año})" + (f", p. {paginas}" if paginas else "")
+        if n == 1:
+            base = f"{versalitas(autores[0]['apellido1'])} ({año})"
+        elif 2 <= n <= 3:
+            aps = " y ".join([versalitas(a['apellido1']) for a in autores])
+            base = f"{aps} ({año})"
+        else:
+            base = f"{versalitas(autores[0]['apellido1'])} y otros ({año})"
+    if paginas:
+        base += f", p. {paginas}"
+    return base
 
 # ------------------ PLANTILLAS ------------------
 PLANTILLAS = {
@@ -94,7 +106,7 @@ if st.button("Generar cita"):
     plantilla = PLANTILLAS[tipo]
 
     # Autor en HTML
-    autor_html = formatear_autores_html(autores)
+    autor_html = formatear_autores_html(autores, tipo=tipo)
 
     # Aplicar italics a títulos y revistas
     datos_formateados = {k: italics(v) if "titulo" in k or "revista" in k else v for k,v in datos.items()}
@@ -104,7 +116,7 @@ if st.button("Generar cita"):
     cita_texto = limpiar_html_a_texto(cita_html)
 
     # Cita abreviada
-    cita_abrev = cita_abreviada(autores, datos.get("año",""), paginas=paginas_cita if paginas_cita else None)
+    cita_abrev = cita_abreviada(autores, datos.get("año",""), paginas=paginas_cita if paginas_cita else None, tipo=tipo)
 
     st.markdown("### Vista previa (con formato)")
     st.markdown(cita_html, unsafe_allow_html=True)
@@ -124,5 +136,4 @@ if "historial" in st.session_state and st.session_state.historial:
         st.markdown(f"**{len(st.session_state.historial)-idx}. Cita completa:**")
         st.markdown(cita_full, unsafe_allow_html=True)
         st.markdown(f"**Cita abreviada:** {cita_abrev}")
-
 

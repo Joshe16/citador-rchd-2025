@@ -1,16 +1,3 @@
-¡Perfecto! Aquí tienes una **app de Streamlit completa, modular y fácil de mantener**, que cubre **todos los tipos de citas** de la Revista Chilena de Derecho (RChD), con:
-
-* Vista previa rica (versalitas y cursivas en HTML).
-* Caja de copia en **texto plano**.
-* **Archivo HTML** y **RTF** descargables para “copiar con formato”.
-* **Cita abreviada** con páginas/tomo/capítulo/párrafo según corresponda.
-* **Historial**.
-* Autores/editores totalmente dinámicos (1, 2–3, 4+ “y otros”).
-* Soporta todos los ejemplos que me diste (2.6.1 a–s; 2.6.2 a–k; 2.6.3; y 2.7).
-
-> Pega este archivo como `app.py` y ejecútalo con `streamlit run app.py`.
-
-```python
 import streamlit as st
 from datetime import datetime
 import io
@@ -1267,3 +1254,4 @@ with st.expander("Ayuda rápida"):
 """
     )
 ```
+

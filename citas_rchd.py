@@ -1,20 +1,11 @@
 import streamlit as st
 import re
 
-# ------------------ UTILIDADES DE FORMATO ------------------
+# --------- Funciones generales ------------
 def versalitas(texto):
     return texto.upper() if texto else ""
 
-def italics(texto):
-    return f"<i>{texto}</i>" if texto else ""
-
-def limpiar_html_a_texto(html):
-    text = re.sub(r'<.*?>', '', html)
-    return text.strip()
-
-# ------------------ AUTORES ------------------
-def formatear_autores_html(autores, tipo="general"):
-    """Devuelve string HTML para la referencia completa"""
+def formatear_autores_libro(autores):
     n = len(autores)
     if n == 0:
         return ""
@@ -23,117 +14,113 @@ def formatear_autores_html(autores, tipo="general"):
         if a['apellido2']:
             ap += f" {versalitas(a['apellido2'])}"
         return f"{ap}, {a['nombre']}"
-    
-    # Regla especial para libros: si >3 autores, solo el primero + otros
-    if tipo == "Libro" and n > 3:
-        return f"{formato(autores[0])} y otros"
+    if n == 1:
+        return formato(autores[0])
+    elif n in [2, 3]:
+        return " y ".join(formato(a) for a in autores)
     else:
-        if n == 1:
-            return formato(autores[0])
-        elif 2 <= n <= 3:
-            return " y ".join(formato(a) for a in autores)
-        else:
-            return f"{formato(autores[0])} y otros"
+        return f"{formato(autores[0])} y otros"
 
-def cita_abreviada(autores, año, paginas=None, tipo="general"):
-    """Devuelve la cita abreviada según número de autores"""
+def cita_abreviada_libro(autores, año, paginas=None):
     n = len(autores)
     if n == 0:
         return f"({año})"
-    if tipo == "Libro" and n > 3:
-        base = f"{versalitas(autores[0]['apellido1'])} y otros ({año})"
+    if n == 1:
+        base = f"{versalitas(autores[0]['apellido1'])} ({año})"
+    elif n in [2,3]:
+        aps = " y ".join([versalitas(a['apellido1']) for a in autores])
+        base = f"{aps} ({año})"
     else:
-        if n == 1:
-            base = f"{versalitas(autores[0]['apellido1'])} ({año})"
-        elif 2 <= n <= 3:
-            aps = " y ".join([versalitas(a['apellido1']) for a in autores])
-            base = f"{aps} ({año})"
-        else:
-            base = f"{versalitas(autores[0]['apellido1'])} y otros ({año})"
+        base = f"{versalitas(autores[0]['apellido1'])} y otros ({año})"
     if paginas:
         base += f", p. {paginas}"
     return base
 
-# ------------------ PLANTILLAS ------------------
-PLANTILLAS = {
-    "Libro": "{autor} ({año}): {titulo} ({lugar}, {editorial}{edicion}).",
-    "Traducción de libro": "{autor} ([{año_original}] {año}): {titulo} (trad. {traductor}, {lugar}, {editorial}).",
-    "Capítulo de libro": "{autor} ({año}): {titulo_cap}, en {editor} (edit.), {titulo_libro} ({lugar}, {editorial}) pp. {paginas}.",
-    "Artículo de revista": "{autor} ({año}): {titulo_art}, {revista}, vol. {volumen}, Nº {numero}: pp. {paginas}.",
-    "Norma": "{pais}, {tipo_norma} {nombre_norma}{fecha}.",
-    "Jurisprudencia": "{tribunal}, {fecha}{rol}{nombre_caso}{info_extra}.",
-    "Página web o blog": "{autor} ({año}): {titulo}. Disponible en: {url}. Fecha de consulta: {fecha}.",
-    "Tesis": "{autor} ({año}): {titulo}. {grado}. {institucion}."
-}
+def formatear_titulo_html(titulo):
+    return f"<i>{titulo}</i>"
 
-# ------------------ CAMPOS POR TIPO ------------------
-CAMPOS = {
-    "Libro": ["titulo", "año", "lugar", "editorial", "edicion"],
-    "Traducción de libro": ["titulo", "año_original", "año", "traductor", "lugar", "editorial"],
-    "Capítulo de libro": ["titulo_cap", "año", "editor", "titulo_libro", "lugar", "editorial", "paginas"],
-    "Artículo de revista": ["titulo_art", "año", "revista", "volumen", "numero", "paginas"],
-    "Norma": ["pais", "tipo_norma", "nombre_norma", "fecha"],
-    "Jurisprudencia": ["tribunal", "fecha", "rol", "nombre_caso", "info_extra"],
-    "Página web o blog": ["titulo", "año", "url", "fecha"],
-    "Tesis": ["titulo", "año", "grado", "institucion"]
-}
+def agregar_autores(num, prefix=""):
+    autores = []
+    for i in range(num):
+        st.markdown(f"**Autor {i+1}**")
+        apellido1 = st.text_input(f"Primer apellido autor {i+1}", key=f"{prefix}ape1_{i}")
+        apellido2 = st.text_input(f"Segundo apellido autor {i+1} (opcional)", key=f"{prefix}ape2_{i}")
+        nombre = st.text_input(f"Nombre autor {i+1}", key=f"{prefix}nom_{i}")
+        autores.append({'apellido1': apellido1.strip(), 'apellido2': apellido2.strip(), 'nombre': nombre.strip()})
+    return autores
 
-# ------------------ APP STREAMLIT ------------------
-st.title("📚 Citador - Revista Chilena de Derecho")
+def limpiar_html_a_texto(html_text):
+    # eliminar tags HTML simples
+    clean = re.sub('<.*?>', '', html_text)
+    return clean
 
-tipo = st.selectbox("Selecciona el tipo de cita", list(PLANTILLAS.keys()))
+# --------- Generación de referencias ------------
+def generar_referencia_libro(datos):
+    autores_html = formatear_autores_libro(datos['autores'])
+    año = datos['año']
+    titulo_html = formatear_titulo_html(datos['titulo'])
+    ciudad = datos['ciudad']
+    editorial = datos['editorial']
+    edicion = datos.get('edicion')
+    tomo = datos.get('tomo')
+    ed_str = f", {edicion}" if edicion and edicion != "1" else ""
+    tomo_str = f", {tomo}" if tomo else ""
+    ciudad_str = f" ({ciudad}, {editorial}{ed_str})" if ciudad or editorial else ""
+    return f"{autores_html} ({año}): {titulo_html}{tomo_str}{ciudad_str}."
 
-# Autores
-st.subheader("Autores")
+# --------- Streamlit interfaz ------------
+
+st.title("Citador estilo Revista Chilena de Derecho")
+
+tipo = st.selectbox("Tipo de fuente", ["Libro"])
+
 num_autores = st.number_input("Número de autores", min_value=0, max_value=10, value=1)
 autores = []
-for i in range(num_autores):
-    st.markdown(f"**Autor {i+1}**")
-    apellido1 = st.text_input(f"Primer apellido", key=f"ape1_{i}")
-    apellido2 = st.text_input(f"Segundo apellido (opcional)", key=f"ape2_{i}")
-    nombre = st.text_input(f"Nombre", key=f"nom_{i}")
-    autores.append({'apellido1': apellido1.strip(), 'apellido2': apellido2.strip(), 'nombre': nombre.strip()})
+if num_autores > 0:
+    autores = agregar_autores(num_autores)
 
-# Otros campos
-st.subheader("Datos de la referencia")
-datos = {}
-for campo in CAMPOS[tipo]:
-    datos[campo] = st.text_input(campo.capitalize())
+# --- Libro ---
+if tipo == "Libro":
+    año = st.text_input("Año de publicación")
+    titulo = st.text_input("Título del libro")
+    ciudad = st.text_input("Ciudad de publicación")
+    editorial = st.text_input("Editorial (ej. Editorial LexisNexis)")
+    edicion = st.text_input("Número de edición (opcional, primera se omite)")
+    tomo = st.text_input("Tomo o volumen (opcional)")
+    paginas = st.text_input("Páginas (opcional, para cita abreviada)")
 
-paginas_cita = st.text_input("Número de página para cita abreviada (opcional)")
+    if st.button("Generar cita"):
+        datos = {
+            'autores': autores,
+            'año': año,
+            'titulo': titulo,
+            'ciudad': ciudad,
+            'editorial': editorial,
+            'edicion': edicion,
+            'tomo': tomo
+        }
 
-if st.button("Generar cita"):
-    plantilla = PLANTILLAS[tipo]
+        ref_html = generar_referencia_libro(datos)
+        cita_texto = cita_abreviada_libro(autores, año, paginas=paginas if paginas else None)
+        ref_texto = limpiar_html_a_texto(ref_html)
 
-    # Autor en HTML
-    autor_html = formatear_autores_html(autores, tipo=tipo)
+        st.subheader("Referencia completa:")
+        st.markdown(ref_html, unsafe_allow_html=True)
+        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
 
-    # Aplicar italics a títulos y revistas
-    datos_formateados = {k: italics(v) if "titulo" in k or "revista" in k else v for k,v in datos.items()}
-    datos_formateados['autor'] = autor_html
+        st.subheader("Cita abreviada:")
+        st.write(cita_texto)
+        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
 
-    cita_html = plantilla.format(**datos_formateados)
-    cita_texto = limpiar_html_a_texto(cita_html)
+        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
 
-    # Cita abreviada
-    cita_abrev = cita_abreviada(autores, datos.get("año",""), paginas=paginas_cita if paginas_cita else None, tipo=tipo)
-
-    st.markdown("### Vista previa (con formato)")
-    st.markdown(cita_html, unsafe_allow_html=True)
-
-    st.markdown("### Cita abreviada")
-    st.write(cita_abrev)
-
-    # Historial
-    if "historial" not in st.session_state:
-        st.session_state.historial = []
-    st.session_state.historial.append((cita_html, cita_abrev))
-
-# Mostrar historial
-if "historial" in st.session_state and st.session_state.historial:
-    st.subheader("Historial de citas")
-    for idx, (cita_full, cita_abrev) in enumerate(reversed(st.session_state.historial)):
-        st.markdown(f"**{len(st.session_state.historial)-idx}. Cita completa:**")
-        st.markdown(cita_full, unsafe_allow_html=True)
-        st.markdown(f"**Cita abreviada:** {cita_abrev}")
+# --- Historial ---
+if "historial" in st.session_state and st.session_state["historial"]:
+    st.markdown("---")
+    st.subheader("Historial de citas generadas")
+    for i, (ref, cita) in enumerate(reversed(st.session_state["historial"])):
+        st.markdown(f"**{len(st.session_state['historial']) - i}. Referencia completa:**")
+        st.markdown(ref, unsafe_allow_html=True)
+        st.markdown(f"**Cita abreviada:** {cita}")
+        st.markdown("")
 

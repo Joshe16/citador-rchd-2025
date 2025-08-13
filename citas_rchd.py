@@ -9,13 +9,18 @@ def formatear_autores(autores, html=False, libro=False):
     n = len(autores)
     if n == 0:
         return ""
+    
     def formato(a):
         ap = versalitas(a['apellido1'])
         if a.get('apellido2'):
             ap += f" {versalitas(a['apellido2'])}"
         return f"{ap}, {a['nombre']}" if not html else f"<span style='font-variant: small-caps'>{ap}</span>, {a['nombre']}"
+    
+    # Si es libro y hay 3 o más autores, mostrar solo el primero + "y otros"
     if libro and n >= 3:
         return f"{formato(autores[0])} y otros"
+    
+    # Si no es libro, mantener la lógica normal
     if n == 1:
         return formato(autores[0])
     elif 2 <= n <= 3:
@@ -234,4 +239,5 @@ if st.button("Generar cita"):
     st.subheader("Cita abreviada:")
     st.write(cita_texto)
     st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+
 

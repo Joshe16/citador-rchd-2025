@@ -62,7 +62,7 @@ def libro(datos):
     autores_html = formatear_autores(datos['autores'], libro=True)
     titulo_html = formatear_titulo(datos['titulo'])
     ciudad = datos.get('ciudad')
-    editorial = datos.get('editorial') or "Editorial LexisNexis"
+    editorial = datos.get('editorial')
     edicion = datos.get('edicion')
     tomo = datos.get('tomo')
     ed_str = f", {edicion}" if edicion and edicion != "1" else ""
@@ -157,7 +157,7 @@ if tipo == "Libro":
         'año': st.text_input("Año de publicación"),
         'titulo': st.text_input("Título del libro"),
         'ciudad': st.text_input("Ciudad de publicación (opcional)"),
-        'editorial': st.text_input("Editorial (opcional, ej: Editorial LexisNexis)"),
+        'editorial': st.text_input("Editorial (ej: Editorial LexisNexis)"),
         'edicion': st.text_input("Número de edición (opcional)"),
         'tomo': st.text_input("Tomo o volumen (opcional)"),
         'paginas': st.text_input("Páginas (opcional para cita abreviada)")
@@ -169,7 +169,7 @@ elif tipo == "Traducción de libro":
         'titulo': st.text_input("Título"),
         'traductor': st.text_input("Traductor"),
         'ciudad': st.text_input("Ciudad"),
-        'editorial': st.text_input("Editorial")
+        'editorial': st.text_input("Editorial (ej: Editorial LexisNexis)")
     })
 elif tipo == "Capítulo de libro":
     num_aut_cap = st.number_input("Número de autores del capítulo", 1, 10, 1)
@@ -181,7 +181,7 @@ elif tipo == "Capítulo de libro":
         'titulo_capitulo': st.text_input("Título del capítulo"),
         'titulo_libro': st.text_input("Título del libro"),
         'ciudad': st.text_input("Ciudad"),
-        'editorial': st.text_input("Editorial"),
+        'editorial': st.text_input("Editorial (ej: Editorial LexisNexis)"),
         'paginas': st.text_input("Páginas")
     })
 elif tipo == "Artículo de revista":
@@ -239,5 +239,6 @@ if st.button("Generar cita"):
     st.subheader("Cita abreviada:")
     st.write(cita_texto)
     st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+
 
 

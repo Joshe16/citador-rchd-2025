@@ -15,12 +15,11 @@ def formatear_autores(autores, html=False, libro=False):
         if a.get('apellido2'):
             ap += f" {versalitas(a['apellido2'])}"
         return f"{ap}, {a['nombre']}" if not html else f"<span style='font-variant: small-caps'>{ap}</span>, {a['nombre']}"
-    
+
     # Si es libro y hay 3 o más autores, mostrar solo el primero + "y otros"
     if libro and n >= 3:
         return f"{formato(autores[0])} y otros"
-    
-    # Si no es libro, mantener la lógica normal
+
     if n == 1:
         return formato(autores[0])
     elif 2 <= n <= 3:
@@ -31,13 +30,18 @@ def formatear_autores(autores, html=False, libro=False):
 def formatear_titulo(titulo):
     return f"<i>{titulo}</i>"
 
-def cita_abreviada(autores, año, paginas=None, tomo=None):
+def cita_abreviada(autores, año, paginas=None, tomo=None, libro=False):
     n = len(autores)
     tomo_str = f", tomo {tomo}" if tomo else ""
     paginas_str = f", p. {paginas}" if paginas else ""
+    
     if n == 0:
         return ""
-    elif n == 1:
+    
+    if libro and n >= 1:
+        return f"{versalitas(autores[0]['apellido1'])} y otros ({año}){paginas_str}"
+    
+    if n == 1:
         return f"{versalitas(autores[0]['apellido1'])} ({año}){tomo_str}{paginas_str}"
     elif 2 <= n <= 3:
         return f"{' y '.join([versalitas(a['apellido1']) for a in autores])} ({año}){paginas_str}"
@@ -143,7 +147,8 @@ tipo = st.selectbox("Tipo de fuente", list(TIPOS.keys()))
 num_autores = st.number_input("Número de autores", min_value=0, max_value=10, value=1)
 
 # Ajuste para libros con ≥3 autores
-if tipo == "Libro" and num_autores >= 3:
+libro_y_otros = tipo == "Libro" and num_autores >= 3
+if libro_y_otros:
     st.info("Se detectaron 3 o más autores: solo se pedirá el primer autor y se agregará 'y otros'.")
     autores = agregar_autores(1)
 else:
@@ -229,7 +234,13 @@ elif tipo == "Tesis":
 # ---------- Generación ----------
 if st.button("Generar cita"):
     ref_html = TIPOS[tipo](datos)
-    cita_texto = cita_abreviada(autores, datos.get('año'), paginas=datos.get('paginas'), tomo=datos.get('tomo')) if tipo in ["Libro", "Traducción de libro", "Capítulo de libro", "Artículo de revista", "Tesis"] else limpiar_html(ref_html)
+    cita_texto = cita_abreviada(
+        autores,
+        datos.get('año'),
+        paginas=datos.get('paginas'),
+        tomo=datos.get('tomo'),
+        libro=libro_y_otros
+    ) if tipo in ["Libro", "Traducción de libro", "Capítulo de libro", "Artículo de revista", "Tesis"] else limpiar_html(ref_html)
     ref_texto = limpiar_html(ref_html)
 
     st.subheader("Referencia completa:")
@@ -239,6 +250,7 @@ if st.button("Generar cita"):
     st.subheader("Cita abreviada:")
     st.write(cita_texto)
     st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+
 
 
 

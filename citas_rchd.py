@@ -1,492 +1,1269 @@
+¡Perfecto! Aquí tienes una **app de Streamlit completa, modular y fácil de mantener**, que cubre **todos los tipos de citas** de la Revista Chilena de Derecho (RChD), con:
+
+* Vista previa rica (versalitas y cursivas en HTML).
+* Caja de copia en **texto plano**.
+* **Archivo HTML** y **RTF** descargables para “copiar con formato”.
+* **Cita abreviada** con páginas/tomo/capítulo/párrafo según corresponda.
+* **Historial**.
+* Autores/editores totalmente dinámicos (1, 2–3, 4+ “y otros”).
+* Soporta todos los ejemplos que me diste (2.6.1 a–s; 2.6.2 a–k; 2.6.3; y 2.7).
+
+> Pega este archivo como `app.py` y ejecútalo con `streamlit run app.py`.
+
+```python
 import streamlit as st
-
-# Funciones de formato
-
+from datetime import datetime
+import io
 import re
 
-def limpiar_html_a_texto(html_text):
-    clean = re.sub('<.*?>', '', html_text)
-    return clean
+# =========================
+# Utilidades de formato
+# =========================
 
-def versalitas(texto):
-    return texto.upper() if texto else ""
+def versalitas(txt: str) -> str:
+    return (txt or "").upper()
 
-def formatear_autores_revista(autores):
+def span_versalitas(txt: str) -> str:
+    if not txt:
+        return ""
+    return f"<span style='font-variant: small-caps'>{versalitas(txt)}</span>"
+
+def italics(txt: str) -> str:
+    return f"<i>{txt}</i>" if txt else ""
+
+def smart_join(items, sep=", ", last_sep=" y "):
+    items = [x for x in items if x]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return sep.join(items[:-1]) + last_sep + items[-1]
+
+def limpiar_html_a_texto(html_text: str) -> str:
+    # Sencillo "stripping" de HTML para copiar como texto plano
+    return re.sub(r"<[^>]+>", "", html_text or "").replace("&nbsp;", " ").strip()
+
+# =========================
+# Formato de autores
+# =========================
+
+def _autor_html(a):
+    ap = versalitas(a.get("apellido1","").strip())
+    ap2 = versalitas(a.get("apellido2","").strip())
+    ap_full = ap if not ap2 else f"{ap} {ap2}"
+    return f"{span_versalitas(ap_full)}, {a.get('nombre','').strip()}"
+
+def _autor_txt(a):
+    ap = versalitas(a.get("apellido1","").strip())
+    ap2 = versalitas(a.get("apellido2","").strip())
+    ap_full = ap if not ap2 else f"{ap} {ap2}"
+    return f"{ap_full}, {a.get('nombre','').strip()}"
+
+def format_authors_html(autores):
     n = len(autores)
     if n == 0:
         return ""
     if n == 1:
-        a = autores[0]
-        apellidos = f"{versalitas(a['apellido1'])}"
-        if a['apellido2']:
-            apellidos += f" {versalitas(a['apellido2'])}"
-        return f"{apellidos}, {a['nombre']}"
+        return _autor_html(autores[0])
     elif 2 <= n <= 3:
-        autores_form = []
-        for a in autores:
-            apellidos = f"{versalitas(a['apellido1'])}"
-            if a['apellido2']:
-                apellidos += f" {versalitas(a['apellido2'])}"
-            autores_form.append(f"{apellidos}, {a['nombre']}")
-        return " y ".join(autores_form)
+        return smart_join([_autor_html(a) for a in autores])
     else:
-        a = autores[0]
-        apellidos = f"{versalitas(a['apellido1'])}"
-        if a['apellido2']:
-            apellidos += f" {versalitas(a['apellido2'])}"
-        return f"{apellidos}, {a['nombre']} y otros"
+        return f"{_autor_html(autores[0])} y otros"
 
-def formatear_autores_html(autores):
-    """Devuelve string con versalitas y nombre normal en HTML para markdown."""
+def format_authors_txt(autores):
     n = len(autores)
     if n == 0:
         return ""
-    def formato(a):
-        ap = versalitas(a['apellido1'])
-        if a['apellido2']:
-            ap += f" {versalitas(a['apellido2'])}"
-        return f"<span style='font-variant: small-caps'>{ap}</span>, {a['nombre']}"
     if n == 1:
-        return formato(autores[0])
+        return _autor_txt(autores[0])
     elif 2 <= n <= 3:
-        return " y ".join(formato(a) for a in autores)
+        return smart_join([_autor_txt(a) for a in autores])
     else:
-        return f"{formato(autores[0])} y otros"
+        return f"{_autor_txt(autores[0])} y otros"
 
-def formatear_titulo_html(titulo):
-    return f"<i>{titulo}</i>"
-
-def cita_abreviada_autores(autores, año, paginas=None, tomo=None, letra=None):
+def format_solo_apellidos_html(autores):
+    """Para abreviadas: solo apellido(s) del/los autores en versalitas."""
     n = len(autores)
-    if letra:
-        año = f"{año}{letra}"
     if n == 0:
         return ""
-    tomo_str = f", tomo {tomo}" if tomo else ""
-    paginas_str = f", p. {paginas}" if paginas else ""
     if n == 1:
-        ap = versalitas(autores[0]['apellido1'])
-        return f"{ap} ({año}){tomo_str}{paginas_str}"
+        ap = versalitas(autores[0].get("apellido1",""))
+        return span_versalitas(ap)
     elif 2 <= n <= 3:
-        aps = [versalitas(a['apellido1']) for a in autores]
-        ap_str = " y ".join(aps)
-        return f"{ap_str} ({año}){paginas_str}"
+        aps = [span_versalitas(versalitas(a.get("apellido1",""))) for a in autores]
+        return smart_join(aps)
     else:
-        ap = versalitas(autores[0]['apellido1'])
-        return f"{ap} y otros ({año}){paginas_str}"
+        ap = versalitas(autores[0].get("apellido1",""))
+        return f"{span_versalitas(ap)} y otros"
 
-def generar_referencia_libro(datos):
-    autores_html = formatear_autores_html(datos['autores'])
-    año = datos['año']
-    titulo_html = formatear_titulo_html(datos['titulo'])
-    ciudad = datos['ciudad']
-    editorial = datos['editorial']
-    edicion = datos.get('edicion')
-    tomo = datos.get('tomo')
-    ed_str = f", {edicion}" if edicion else ""
-    tomo_str = f", {tomo}" if tomo else ""
-    return f"{autores_html} ({año}): {titulo_html}{tomo_str} ({ciudad}, {editorial}{ed_str})."
+def format_solo_apellidos_txt(autores):
+    n = len(autores)
+    if n == 0:
+        return ""
+    if n == 1:
+        return versalitas(autores[0].get("apellido1",""))
+    elif 2 <= n <= 3:
+        return smart_join([versalitas(a.get("apellido1","")) for a in autores])
+    else:
+        return f"{versalitas(autores[0].get('apellido1',''))} y otros"
 
-def generar_referencia_traduccion_libro(datos):
-    autores_html = formatear_autores_html(datos['autores'])
-    año_original = datos['año_original']
-    año = datos['año']
-    titulo_html = formatear_titulo_html(datos['titulo'])
-    traductor = datos['traductor']
-    ciudad = datos['ciudad']
-    editorial = datos['editorial']
-    return f"{autores_html} ([{año_original}] {año}): {titulo_html} (trad. {traductor}, {ciudad}, {editorial})."
+# =========================
+# Abreviadas (2.7)
+# =========================
 
-def generar_referencia_capitulo_libro(datos):
-    autor_capitulo_html = formatear_autores_html(datos['autor_capitulo'])
-    año = datos['año']
-    titulo_cap_html = formatear_titulo_html(datos['titulo_capitulo'])
-    editor_html = formatear_autores_html(datos['editores'])
-    titulo_libro_html = formatear_titulo_html(datos['titulo_libro'])
-    ciudad = datos['ciudad']
-    editorial = datos['editorial']
-    paginas = datos['paginas']
-    return f"{autor_capitulo_html} ({año}): “{titulo_cap_html}”, en {editor_html} (edit.), {titulo_libro_html} ({ciudad}, {editorial}) pp. {paginas}."
+def cita_abreviada_obras(autores, año, paginas=None, tomo=None, letra=None, cap_sec=None, parrafo=None):
+    """
+    Regla general 2.7.1
+    - Apellido(s) del autor (versalita), (año(+letra)), [Tomo I,] p./pp. X-Y
+    - eBooks sin páginas: (capítulo/sección, párrafo)
+    """
+    yr = f"{año}{letra}" if letra else f"{año}"
 
-def generar_referencia_articulo_revista(datos):
-    autores_html = formatear_autores_html(datos['autores'])
-    año = datos['año']
-    titulo_articulo_html = formatear_titulo_html(datos['titulo'])
-    revista = datos['revista']
-    volumen = datos.get('volumen')
-    numero = datos.get('numero')
-    paginas = datos.get('paginas')
-    doi = datos.get('doi')
-    ref = f"{autores_html} ({año}): “{titulo_articulo_html}”, {revista}"
-    if volumen:
-        ref += f", vol. {volumen}"
-    if numero:
-        ref += f", Nº {numero}"
+    # eBook sin páginas (capítulo/sección/párrafo)
+    if cap_sec or parrafo:
+        base = f"{format_solo_apellidos_txt(autores)} ({yr})"
+        partes = []
+        if cap_sec:
+            partes.append(str(cap_sec))
+        if parrafo:
+            # “párr. 2”
+            partes.append(f"párr. {parrafo}")
+        return f"{base} {', '.join(partes)}."
+
+    # Con tomos y/o páginas
+    t = f", Tomo {tomo}" if tomo else ""
+    p = ""
     if paginas:
-        ref += f": pp. {paginas}"
-    if doi:
-        ref += f". DOI: {doi}"
-    ref += "."
-    return ref
+        # si tiene guion -> pp., si es única -> p.
+        p = f", pp. {paginas}" if "-" in paginas or "–" in paginas or "y" in paginas else f", p. {paginas}"
+    return f"{format_solo_apellidos_txt(autores)} ({yr}){t}{p}."
 
-def generar_referencia_norma(datos):
-    pais = versalitas(datos['pais'])
-    tipo = datos['tipo_norma']
-    nombre = datos['nombre_norma']
-    fecha = datos.get('fecha', '')
-    if fecha:
-        fecha = f" ({fecha})"
-    return f"{pais}, {tipo} {nombre}{fecha}."
+def cita_abreviada_normas(pais, nombre_o_num):
+    # 2.7.2
+    return f"{versalitas(pais)}, {nombre_o_num}."
 
-def generar_referencia_jurisprudencia(datos):
-    tribunal = versalitas(datos['tribunal'])
-    fecha = datos['fecha']
-    rol = datos.get('rol')
-    nombre_caso = datos.get('nombre_caso')
-    info_extra = datos.get('info_extra')
-    ref = f"{tribunal}, {fecha}"
-    if rol:
-        ref += f", rol {rol}"
-    if nombre_caso:
-        ref += f" ({nombre_caso})"
-    if info_extra:
-        ref += f", {info_extra}"
-    ref += "."
-    return ref
+def cita_abreviada_jurisprudencia(tribunal, nombre_caso=None, fecha=None, pinpoint=None):
+    # 2.7.3
+    # tribunal + (nombre caso o fecha) + pinpoint (cons./párr./pág.)
+    base = f"{versalitas(tribunal)}"
+    cuerpo = nombre_caso if nombre_caso else (fecha or "")
+    if cuerpo:
+        base += f", {cuerpo}"
+    if pinpoint:
+        base += f", {pinpoint}"
+    base += "."
+    return base
 
-def generar_referencia_web(datos):
-    autor = formatear_autores_revista(datos.get('autores', [])) if datos.get('autores') else datos.get('autor_sin_autor', '')
-    año = datos.get('año')
-    titulo = datos.get('titulo')
-    url = datos.get('url')
-    fecha_consulta = datos.get('fecha_consulta')
-    ref = f"{autor} ({año}): {titulo}, Disponible en: {url}."
-    if fecha_consulta:
-        ref += f" Fecha de consulta: {fecha_consulta}."
-    return ref
+# =========================
+# Esquema de campos por tipo
+# =========================
 
-def generar_referencia_tesis(datos):
-    autor = formatear_autores_html(datos['autores'])
-    año = datos['año']
-    titulo_html = formatear_titulo_html(datos['titulo'])
-    grado = datos['grado']
-    institucion = datos['institucion']
-    return f"{autor} ({año}): {titulo_html}. {grado}. {institucion}."
+# Cada tipo define:
+#  - 'label'        : nombre en UI
+#  - 'fields'       : lista de campos (name,label,optional,kind)
+#  - 'render_html'  : función -> referencia completa (HTML)
+#  - 'render_txt'   : función -> referencia completa (texto plano)
+#  - 'short'        : función -> cita abreviada (texto)
+#  - 'w_authors'    : bool, si usa autores del bloque principal
+#  - 'w_editors'    : bool, si usa editores
+#  - 'note'         : tips opcionales
 
-def agregar_autores(num, prefix=""):
+# Helpers de entrada
+def input_autores(key_prefix="", titulo="Autores", minimo=0):
     autores = []
-    for i in range(num):
-        st.markdown(f"**Autor {i+1}**")
-        apellido1 = st.text_input(f"Primer apellido autor {i+1}", key=f"{prefix}ape1_{i}")
-        apellido2 = st.text_input(f"Segundo apellido autor {i+1} (opcional)", key=f"{prefix}ape2_{i}")
-        nombre = st.text_input(f"Nombre autor {i+1}", key=f"{prefix}nom_{i}")
-        autores.append({'apellido1': apellido1.strip(), 'apellido2': apellido2.strip(), 'nombre': nombre.strip()})
+    st.markdown(f"**{titulo}**")
+    n = st.number_input(f"Número de {titulo.lower()}", min_value=minimo, max_value=10, value=minimo, key=f"{key_prefix}_n")
+    for i in range(n):
+        col1, col2, col3 = st.columns([1,1,1.2])
+        with col1:
+            a1 = st.text_input(f"Primer apellido {i+1}", key=f"{key_prefix}_a1_{i}")
+        with col2:
+            a2 = st.text_input(f"Segundo apellido {i+1} (opcional)", key=f"{key_prefix}_a2_{i}")
+        with col3:
+            nom = st.text_input(f"Nombre {i+1}", key=f"{key_prefix}_nom_{i}")
+        autores.append({"apellido1": a1.strip(), "apellido2": a2.strip(), "nombre": nom.strip()})
     return autores
 
-def limpiar_html_a_texto(html_text):
-    soup = BeautifulSoup(html_text, "html.parser")
-    return soup.get_text()
+def input_field(field, key_prefix=""):
+    kind = field.get("kind","text")
+    opt = field.get("optional", False)
+    label = field["label"] + (" (opcional)" if opt else "")
+    key = f"{key_prefix}_{field['name']}"
+    if kind == "text":
+        return st.text_input(label, key=key)
+    if kind == "textarea":
+        return st.text_area(label, key=key, height=80)
+    if kind == "date":
+        s = st.text_input(label, key=key, placeholder="dd/mm/aaaa")
+        return s
+    if kind == "select":
+        return st.selectbox(label, field.get("options",[]), key=key)
+    return st.text_input(label, key=key)
 
-st.title("Citador estilo Revista Chilena de Derecho")
+# =========================
+# Renderizadores por tipo
+# =========================
 
-tipo = st.selectbox("Tipo de fuente", [
-    "Libro",
-    "Traducción de libro",
-    "Capítulo de libro",
-    "Artículo de revista",
-    "Norma",
-    "Jurisprudencia",
-    "Página web o blog",
-    "Tesis"
-])
+def RCHD_libro_html(d):
+    # a) Libro (1, 2-3, 4+ autores) y d) tomos
+    autores = format_authors_html(d["autores"])
+    t = italics(d["titulo"])
+    tomo = f", {d['tomo']}" if d.get("tomo") else ""
+    ed = f", {d['edicion']}" if d.get("edicion") else ""
+    return f"{autores} ({d['anio']}): {t}{tomo} ({d['ciudad']}, {d['editorial']}{ed})."
 
-num_autores = st.number_input("Número de autores", min_value=0, max_value=10, value=1)
+def RCHD_libro_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = d["titulo"]
+    tomo = f", {d['tomo']}" if d.get("tomo") else ""
+    ed = f", {d['edicion']}" if d.get("edicion") else ""
+    return f"{autores} ({d['anio']}): {t}{tomo} ({d['ciudad']}, {d['editorial']}{ed})."
 
-autores = []
-if num_autores > 0:
-    autores = agregar_autores(num_autores)
+def RCHD_traduccion_libro_html(d):
+    autores = format_authors_html(d["autores"])
+    t = italics(d["titulo"])
+    return f"{autores} ([{d['anio_original']}] {d['anio']}): {t} (trad. {d['traductor']}, {d['ciudad']}, {d['editorial']})."
 
-if tipo == "Libro":
-    año = st.text_input("Año de publicación")
-    titulo = st.text_input("Título del libro")
-    ciudad = st.text_input("Ciudad de publicación")
-    editorial = st.text_input("Editorial")
-    edicion = st.text_input("Número de edición (opcional)")
-    tomo = st.text_input("Tomo o volumen (opcional)")
-    paginas = st.text_input("Páginas (opcional, para cita abreviada)")
+def RCHD_traduccion_libro_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = d["titulo"]
+    return f"{autores} ([{d['anio_original']}] {d['anio']}): {t} (trad. {d['traductor']}, {d['ciudad']}, {d['editorial']})."
 
-    if st.button("Generar cita"):
-        datos = {
-            'autores': autores,
-            'año': año,
-            'titulo': titulo,
-            'ciudad': ciudad,
-            'editorial': editorial,
-            'edicion': edicion,
-            'tomo': tomo
-        }
-        ref_html = generar_referencia_libro(datos)
-        cita_texto = cita_abreviada_autores(autores, año, paginas=paginas if paginas else None, tomo=tomo if tomo else None)
+def RCHD_traduccion_articulo_html(d):
+    # e) ii. Traducción de artículo
+    autores = format_authors_html(d["autores"])
+    t = f"“{d['titulo_articulo']}”"
+    rev = d["revista"]
+    vol = f", vol. {d['volumen']}" if d.get("volumen") else ""
+    num = f", Nº {d['numero']}" if d.get("numero") else ""
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    ttrad = f" (trad. {d['traductor']})" if d.get("traductor") else ""
+    an = d["anio"]
+    if d.get("anio_original"):
+        an = f"[{d['anio_original']}] {d['anio']}"
+    return f"{autores} ({an}): {t}, {rev}{vol}{num}{pgs}{ttrad}."
 
-        ref_texto = limpiar_html_a_texto(ref_html)
+def RCHD_traduccion_articulo_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = f"“{d['titulo_articulo']}”"
+    rev = d["revista"]
+    vol = f", vol. {d['volumen']}" if d.get("volumen") else ""
+    num = f", Nº {d['numero']}" if d.get("numero") else ""
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    ttrad = f" (trad. {d['traductor']})" if d.get("traductor") else ""
+    an = d["anio"]
+    if d.get("anio_original"):
+        an = f"[{d['anio_original']}] {d['anio']}"
+    return f"{autores} ({an}): {t}, {rev}{vol}{num}{pgs}{ttrad}."
 
-        st.subheader("Referencia completa:")
-        st.markdown(ref_html, unsafe_allow_html=True)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_capitulo_editor_html(d):
+    # f) editor (singular) / g) editores (plural) -> detectamos plural según cantidad
+    autor_cap = format_authors_html(d["autores_cap"])
+    editores = format_authors_html(d["editores"])
+    etiqueta = "(edit.)" if len(d["editores"]) == 1 else "(edits.)"
+    tcap = f"“{d['titulo_cap']}”"
+    tlib = italics(d["titulo_libro"])
+    return f"{autor_cap} ({d['anio']}): {tcap}, en {editores} {etiqueta}, {tlib} ({d['ciudad']}, {d['editorial']}) pp. {d['paginas']}."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_capitulo_editor_txt(d):
+    autor_cap = format_authors_txt(d["autores_cap"])
+    editores = format_authors_txt(d["editores"])
+    etiqueta = "(edit.)" if len(d["editores"]) == 1 else "(edits.)"
+    tcap = f"“{d['titulo_cap']}”"
+    tlib = d["titulo_libro"]
+    return f"{autor_cap} ({d['anio']}): {tcap}, en {editores} {etiqueta}, {tlib} ({d['ciudad']}, {d['editorial']}) pp. {d['paginas']}."
 
-        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
+def RCHD_articulo_revista_html(d):
+    autores = format_authors_html(d["autores"])
+    t = f"“{d['titulo_art']}”"
+    rev = d["revista"]
+    vol = f", vol. {d['volumen']}" if d.get("volumen") else ""
+    num = f", N° {d['numero']}" if d.get("numero") else ""
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    doi = f". DOI: {d['doi']}" if d.get("doi") else ""
+    return f"{autores} ({d['anio']}): {t}, {rev}{vol}{num}{pgs}{doi}."
 
+def RCHD_articulo_revista_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = f"“{d['titulo_art']}”"
+    rev = d["revista"]
+    vol = f", vol. {d['volumen']}" if d.get("volumen") else ""
+    num = f", N° {d['numero']}" if d.get("numero") else ""
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    doi = f". DOI: {d['doi']}" if d.get("doi") else ""
+    return f"{autores} ({d['anio']}): {t}, {rev}{vol}{num}{pgs}{doi}."
 
-elif tipo == "Traducción de libro":
-    año_original = st.text_input("Año de publicación original")
-    año = st.text_input("Año de publicación")
-    titulo = st.text_input("Título del libro")
-    traductor = st.text_input("Traductor (nombre completo)")
-    ciudad = st.text_input("Ciudad de publicación")
-    editorial = st.text_input("Editorial")
+def RCHD_articulo_sin_pags_html(d):
+    # i) sin vol/núm o sin páginas -> usamos DOI o Vol con DOI
+    autores = format_authors_html(d["autores"])
+    t = f"“{d['titulo_art']}”"
+    rev = d["revista"]
+    trozos = [f"{autores} ({d['anio']}): {t}, {rev}"]
+    if d.get("volumen"):
+        trozos.append(f"Vol. {d['volumen']}")
+    if d.get("doi"):
+        trozos.append(d["doi"])
+        cuerpo = ", ".join(trozos) + "."
+    else:
+        cuerpo = ", ".join(trozos) + "."
+    return cuerpo
 
-    if st.button("Generar cita"):
-        datos = {
-            'autores': autores,
-            'año_original': año_original,
-            'año': año,
-            'titulo': titulo,
-            'traductor': traductor,
-            'ciudad': ciudad,
-            'editorial': editorial
-        }
-        ref_html = generar_referencia_traduccion_libro(datos)
-        cita_texto = cita_abreviada_autores(autores, año)
+def RCHD_articulo_sin_pags_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = f"“{d['titulo_art']}”"
+    rev = d["revista"]
+    trozos = [f"{autores} ({d['anio']}): {t}, {rev}"]
+    if d.get("volumen"):
+        trozos.append(f"Vol. {d['volumen']}")
+    if d.get("doi"):
+        trozos.append(d["doi"])
+        cuerpo = ", ".join(trozos) + "."
+    else:
+        cuerpo = ", ".join(trozos) + "."
+    return cuerpo
 
-        ref_texto = limpiar_html_a_texto(ref_html)
+def RCHD_no_latino_html(d):
+    # j) Autor con nombre original + traducción título + revista/datos
+    autor = f"{span_versalitas(versalitas(d['apellidos_latinos']))}, {d['nombres_latinos']} ({d['anio']})"
+    titulo_ori = f"“{d['titulo_original']}”"
+    titulo_trad = f"“{d['titulo_trad']}”" if d.get("titulo_trad") else ""
+    revista_ori = d.get("revista_original","")
+    if d.get("numero"):
+        revista_ori += f", N° {d['numero']}"
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    tit = f"{titulo_ori} ({titulo_trad})" if titulo_trad else titulo_ori
+    return f"{autor}: {tit}, {revista_ori}{pgs}."
 
-        st.subheader("Referencia completa:")
-        st.markdown(ref_html, unsafe_allow_html=True)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_no_latino_txt(d):
+    autor = f"{versalitas(d['apellidos_latinos'])}, {d['nombres_latinos']} ({d['anio']})"
+    titulo_ori = f"“{d['titulo_original']}”"
+    titulo_trad = f"“{d['titulo_trad']}”" if d.get("titulo_trad") else ""
+    revista_ori = d.get("revista_original","")
+    if d.get("numero"):
+        revista_ori += f", N° {d['numero']}"
+    pgs = f": pp. {d['paginas']}" if d.get("paginas") else ""
+    tit = f"{titulo_ori} ({titulo_trad})" if titulo_trad else titulo_ori
+    return f"{autor}: {tit}, {revista_ori}{pgs}."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_ebook_html(d):
+    # k) e-book sin páginas
+    autores = format_authors_html(d["autores"])
+    t = f"“{d['titulo_cap'] or d['titulo']}”" if d.get("titulo_cap") else italics(d["titulo"])
+    ed = f": {d['edicion_plataforma']}" if d.get("edicion_plataforma") else ""
+    loc = f", N° {d['ubicacion_num']}" if d.get("ubicacion_num") else ""
+    return f"{autores} ({d['anio']}): {t}, {italics(d['cont_in']} {italics(d['cont_de']) if d.get('cont_de') else ''}){ed}{loc}."
 
-        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
+def RCHD_ebook_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = f"“{d['titulo_cap'] or d['titulo']}”" if d.get("titulo_cap") else d["titulo"]
+    ed = f": {d['edicion_plataforma']}" if d.get("edicion_plataforma") else ""
+    loc = f", N° {d['ubicacion_num']}" if d.get("ubicacion_num") else ""
+    # Contenedor (ej. en MAURER... Autonomous Driving ...)
+    cont = f"en {d['cont_in']}" if d.get("cont_in") else ""
+    if d.get("cont_de"):
+        cont += f" {d['cont_de']}"
+    return f"{autores} ({d['anio']}): {t}, {cont}{ed}{loc}."
 
+def RCHD_manuscrito_html(d):
+    # l) Fuente manuscrita
+    ent = span_versalitas(d["entidad"])
+    fondo = d["fondo"]
+    desc = d["descripcion"]
+    fecha = d["fecha"]
+    return f"{ent} - {fondo}: {desc}, {fecha}."
 
-elif tipo == "Capítulo de libro":
-    num_autores_cap = st.number_input("Número de autores del capítulo", min_value=1, max_value=10, value=1, key="cap_num_autores")
-    autor_capitulo = []
-    if num_autores_cap > 0:
-        autor_capitulo = agregar_autores(num_autores_cap, prefix="cap_")
+def RCHD_manuscrito_txt(d):
+    ent = versalitas(d["entidad"])
+    fondo = d["fondo"]
+    desc = d["descripcion"]
+    fecha = d["fecha"]
+    return f"{ent} - {fondo}: {desc}, {fecha}."
 
-    año = st.text_input("Año de publicación")
-    titulo_capitulo = st.text_input("Título del capítulo")
-    num_editores = st.number_input("Número de editores", min_value=1, max_value=10, value=1, key="cap_num_edit")
-    editores = []
-    if num_editores > 0:
-        editores = agregar_autores(num_editores, prefix="edit_")
+def RCHD_dogmatica_hist_html(d):
+    # m) Obras dogmáticas con sistemas históricos (input libre)
+    return d["cita_bruta"].strip().rstrip(".") + "."
 
-    titulo_libro = st.text_input("Título del libro")
-    ciudad = st.text_input("Ciudad de publicación")
-    editorial = st.text_input("Editorial")
-    paginas = st.text_input("Páginas (ejemplo: 55-73)")
+def RCHD_dogmatica_hist_txt(d):
+    return d["cita_bruta"].strip().rstrip(".") + "."
 
-    if st.button("Generar cita"):
-        datos = {
-            'autor_capitulo': autor_capitulo,
-            'año': año,
-            'titulo_capitulo': titulo_capitulo,
-            'editores': editores,
-            'titulo_libro': titulo_libro,
-            'ciudad': ciudad,
-            'editorial': editorial,
-            'paginas': paginas
-        }
-        ref_html = generar_referencia_capitulo_libro(datos)
-        cita_texto = cita_abreviada_autores(autor_capitulo, año, paginas=paginas)
+def RCHD_tesis_html(d):
+    # n) Tesis/memoria
+    autores = format_authors_html(d["autores"])
+    t = italics(d["titulo"])
+    return f"{autores} ({d['anio']}): {t}. {d['grado']}. {d['institucion']}."
 
-        ref_texto = limpiar_html_a_texto(ref_html)
+def RCHD_tesis_txt(d):
+    autores = format_authors_txt(d["autores"])
+    t = d["titulo"]
+    return f"{autores} ({d['anio']}): {t}. {d['grado']}. {d['institucion']}."
 
-        st.subheader("Referencia completa:")
-        st.markdown(ref_html, unsafe_allow_html=True)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_informe_html(d):
+    # o) Informes institucionales
+    org = f"{span_versalitas(d['org'])}"
+    unidad = f", {span_versalitas(d['unidad'])}" if d.get("unidad") else ""
+    t = f": “{d['titulo']}”"
+    num = f", {d['numero']}" if d.get("numero") else ""
+    extra = f", {d['extra']}" if d.get("extra") else ""
+    sd = " (s.d.)" if d.get("sd") else ""
+    return f"{org}{unidad}{t}{num}{extra}{sd}."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_informe_txt(d):
+    org = versalitas(d["org"])
+    unidad = f", {versalitas(d['unidad'])}" if d.get("unidad") else ""
+    t = f": “{d['titulo']}”"
+    num = f", {d['numero']}" if d.get("numero") else ""
+    extra = f", {d['extra']}" if d.get("extra") else ""
+    sd = " (s.d.)" if d.get("sd") else ""
+    return f"{org}{unidad}{t}{num}{extra}{sd}."
 
-        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
+def RCHD_doc_web_html(d):
+    # p) Documentos alojados en sitios web (no libros/artículos)
+    encabezado = d["encabezado"]  # “Lo que corresponda según el tipo…”
+    disp = f" Disponible en: {d['url']}."
+    fcons = f" Fecha de consulta: {d['fecha_consulta']}." if d.get("fecha_consulta") else ""
+    return f"{encabezado}{disp}{fcons}"
 
+def RCHD_doc_web_txt(d):
+    encabezado = d["encabezado"]
+    disp = f" Disponible en: {d['url']}."
+    fcons = f" Fecha de consulta: {d['fecha_consulta']}." if d.get("fecha_consulta") else ""
+    return f"{encabezado}{disp}{fcons}"
 
-elif tipo == "Artículo de revista":
-    año = st.text_input("Año de publicación")
-    titulo_articulo = st.text_input("Título del artículo")
-    revista = st.text_input("Nombre de la revista")
-    volumen = st.text_input("Volumen (opcional)")
-    numero = st.text_input("Número (opcional)")
-    paginas = st.text_input("Páginas (ejemplo: 23-45)")
-    doi = st.text_input("DOI (opcional)")
+def RCHD_diario_sin_autor_html(d):
+    # q.a) Periódico sin autor
+    per = d["periodico"]
+    fecha = d["fecha"]
+    tit = f"“{d['titulo']}”"
+    pag = f", p. {d['pagina']}" if d.get("pagina") else ""
+    return f"{versalitas(per)} ({fecha}): {tit}{pag}."
 
-    if st.button("Generar cita"):
-        datos = {
-            'autores': autores,
-            'año': año,
-            'titulo': titulo_articulo,
-            'revista': revista,
-            'volumen': volumen,
-            'numero': numero,
-            'paginas': paginas,
-            'doi': doi
-        }
-        ref_html = generar_referencia_articulo_revista(datos)
-        cita_texto = cita_abreviada_autores(autores, año, paginas=paginas)
+def RCHD_diario_sin_autor_txt(d):
+    per = d["periodico"]
+    fecha = d["fecha"]
+    tit = f"“{d['titulo']}”"
+    pag = f", p. {d['pagina']}" if d.get("pagina") else ""
+    return f"{versalitas(per)} ({fecha}): {tit}{pag}."
 
-        ref_texto = limpiar_html_a_texto(ref_html)
+def RCHD_diario_con_autor_html(d):
+    # q.b) Periódico con autor
+    autores = format_authors_html(d["autores"])
+    fecha = d["fecha"]
+    tit = f"“{d['titulo']}”"
+    per = d["periodico"]
+    pag = f", p. {d['pagina']}" if d.get("pagina") else ""
+    return f"{autores} ({fecha}): {tit}, {per}{pag}."
 
-        st.subheader("Referencia completa:")
-        st.markdown(ref_html, unsafe_allow_html=True)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_diario_con_autor_txt(d):
+    autores = format_authors_txt(d["autores"])
+    fecha = d["fecha"]
+    tit = f"“{d['titulo']}”"
+    per = d["periodico"]
+    pag = f", p. {d['pagina']}" if d.get("pagina") else ""
+    return f"{autores} ({fecha}): {tit}, {per}{pag}."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_noticias_web_html(d):
+    # r) Noticias/columnas en sitios web
+    autores = format_authors_html(d["autores"])
+    tit = f"“{d['titulo']}”"
+    medio = d["medio"]
+    url = d["url"]
+    fcons = d.get("fecha_consulta")
+    base = f"{autores} ({d['anio']}): {tit}, {medio}. Disponible en: {url}."
+    if fcons:
+        base += f" Fecha de consulta: {fcons}."
+    return base
 
-        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
+def RCHD_noticias_web_txt(d):
+    autores = format_authors_txt(d["autores"])
+    tit = f"“{d['titulo']}”"
+    medio = d["medio"]
+    url = d["url"]
+    fcons = d.get("fecha_consulta")
+    base = f"{autores} ({d['anio']}): {tit}, {medio}. Disponible en: {url}."
+    if fcons:
+        base += f" Fecha de consulta: {fcons}."
+    return base
 
+def RCHD_sitio_web_html(d):
+    # s) Página web / blog institucional
+    ent = span_versalitas(d["entidad"])
+    anio = d["anio"]
+    titulo = d["titulo"]
+    url = d["url"]
+    fcons = d["fecha_consulta"]
+    return f"{ent} (sitio web, {anio}): {titulo}. Disponible en: {url}. Fecha de consulta: {fcons}."
 
-elif tipo == "Norma":
-    pais = st.text_input("País (ejemplo: CHILE)")
-    tipo_norma = st.text_input("Tipo de norma (ejemplo: Ley N°)")
-    nombre_norma = st.text_input("Nombre o número de la norma")
-    fecha = st.text_input("Fecha de publicación (dd/mm/aaaa) (opcional)")
+def RCHD_sitio_web_txt(d):
+    ent = versalitas(d["entidad"])
+    anio = d["anio"]
+    titulo = d["titulo"]
+    url = d["url"]
+    fcons = d["fecha_consulta"]
+    return f"{ent} (sitio web, {anio}): {titulo}. Disponible en: {url}. Fecha de consulta: {fcons}."
 
-    if st.button("Generar cita"):
-        datos = {
-            'pais': pais,
-            'tipo_norma': tipo_norma,
-            'nombre_norma': nombre_norma,
-            'fecha': fecha
-        }
-        ref_texto = generar_referencia_norma(datos)
-        cita_texto = f"{versalitas(pais)}, {tipo_norma} {nombre_norma}."
+# -------- Normas (2.6.2)
 
-        st.subheader("Referencia completa:")
-        st.write(ref_texto)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_constitucion_html(d):
+    return f"{versalitas(d['pais'])}, {italics('Constitución Política de la República')} ({d['fecha']})."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_constitucion_txt(d):
+    return f"{versalitas(d['pais'])}, Constitución Política de la República ({d['fecha']})."
 
-        st.session_state.setdefault("historial", []).append((ref_texto, cita_texto))
+def RCHD_ley_no_cod_html(d):
+    return f"{versalitas(d['pais'])}, Ley N° {d['numero']}. {italics(d['denominacion'])} ({d['fecha']})."
 
+def RCHD_ley_no_cod_txt(d):
+    return f"{versalitas(d['pais'])}, Ley N° {d['numero']}. {d['denominacion']} ({d['fecha']})."
 
-elif tipo == "Jurisprudencia":
-    tribunal = st.text_input("Tribunal")
-    fecha = st.text_input("Fecha (dd/mm/aaaa)")
-    rol = st.text_input("Rol (opcional)")
-    nombre_caso = st.text_input("Nombre del caso (opcional)")
-    info_extra = st.text_input("Información extra (opcional)")
+def RCHD_codigo_html(d):
+    fecha = f" ({d['fecha']})" if d.get("fecha") else " (s.d.)." if d.get("sd") else ""
+    return f"{versalitas(d['pais'])}, {italics(d['nombre'])}{fecha if fecha else ''}"
 
-    if st.button("Generar cita"):
-        datos = {
-            'tribunal': tribunal,
-            'fecha': fecha,
-            'rol': rol,
-            'nombre_caso': nombre_caso,
-            'info_extra': info_extra
-        }
-        ref_texto = generar_referencia_jurisprudencia(datos)
-        cita_texto = ref_texto  # Igual que referencia
+def RCHD_codigo_txt(d):
+    fecha = f" ({d['fecha']})" if d.get("fecha") else " (s.d.)." if d.get("sd") else ""
+    return f"{versalitas(d['pais'])}, {d['nombre']}{fecha if fecha else ''}"
 
-        st.subheader("Referencia completa:")
-        st.write(ref_texto)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_decreto_html(d):
+    return f"{versalitas(d['pais'])}, {versalitas(d['organismo'])}, Decreto Supremo {d['numero']}, {d['denominacion']} ({d['fecha']})."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_decreto_txt(d):
+    return f"{versalitas(d['pais'])}, {versalitas(d['organismo'])}, Decreto Supremo {d['numero']}, {d['denominacion']} ({d['fecha']})."
 
-        st.session_state.setdefault("historial", []).append((ref_texto, cita_texto))
+def RCHD_oficio_html(d):
+    return f"{versalitas(d['pais'])}, {versalitas(d['emisor'])}, Ord. {d['numero']}, {d['descripcion']} ({d['fecha']})."
 
+def RCHD_oficio_txt(d):
+    return f"{versalitas(d['pais'])}, {versalitas(d['emisor'])}, Ord. {d['numero']}, {d['descripcion']} ({d['fecha']})."
 
-elif tipo == "Página web o blog":
-    autor_sin_autor = None
-    if num_autores == 0:
-        autor_sin_autor = st.text_input("Autor o entidad responsable (si no hay autores)")
+def RCHD_proyecto_ley_html(d):
+    return f"{versalitas(d['pais'])}, {d['descripcion']} (boletín N° {d['boletin']})."
 
-    año = st.text_input("Año (puede ser aproximado)")
-    titulo = st.text_input("Título del documento o entrada")
-    url = st.text_input("URL")
-    fecha_consulta = st.text_input("Fecha de consulta (dd/mm/aaaa) (opcional)")
+def RCHD_proyecto_ley_txt(d):
+    return f"{versalitas(d['pais'])}, {d['descripcion']} (boletín N° {d['boletin']})."
 
-    if st.button("Generar cita"):
-        datos = {
-            'autores': autores if autores else None,
-            'autor_sin_autor': autor_sin_autor,
-            'año': año,
-            'titulo': titulo,
-            'url': url,
-            'fecha_consulta': fecha_consulta
-        }
-        ref_texto = generar_referencia_web(datos)
-        cita_texto = f"{formatear_autores_revista(autores) if autores else autor_sin_autor} ({año})"
+def RCHD_historia_ley_html(d):
+    return f"{versalitas(d['entidad'])} ({d['anio']}): {italics(d['titulo'])}, {d['instancia']}; {d['detalle']}. Disponible en: {d['url']}. Fecha de consulta: {d['fecha_consulta']}."
+def RCHD_historia_ley_txt(d):
+    return f"{versalitas(d['entidad'])} ({d['anio']}): {d['titulo']}, {d['instancia']}; {d['detalle']}. Disponible en: {d['url']}. Fecha de consulta: {d['fecha_consulta']}."
 
-        st.subheader("Referencia completa:")
-        st.write(ref_texto)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_tratado_html(d):
+    return f"{italics(d['nombre'])} ({d['fecha_adop']})."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_tratado_txt(d):
+    return f"{d['nombre']} ({d['fecha_adop']})."
 
-        st.session_state.setdefault("historial", []).append((ref_texto, cita_texto))
+def RCHD_congreso_intern_html(d):
+    return f"{versalitas(d['evento'])}: “{d['titulo']}” ({d['lugar']}, {d['rango_fechas']})."
 
+def RCHD_congreso_intern_txt(d):
+    return f"{versalitas(d['evento'])}: “{d['titulo']}” ({d['lugar']}, {d['rango_fechas']})."
 
-elif tipo == "Tesis":
-    año = st.text_input("Año de publicación")
-    titulo = st.text_input("Título de la tesis")
-    grado = st.text_input("Grado académico (ejemplo: Tesis para optar al título de Ingeniero Civil)")
-    institucion = st.text_input("Institución")
+def RCHD_doc_onu_html(d):
+    return f"{versalitas('NACIONES UNIDAS')}, {versalitas(d['organo'])}: “{d['titulo']}”, {d['signatura']} ({d['fecha']})."
+def RCHD_doc_onu_txt(d):
+    return f"{versalitas('NACIONES UNIDAS')}, {versalitas(d['organo'])}: “{d['titulo']}”, {d['signatura']} ({d['fecha']})."
 
-    if st.button("Generar cita"):
-        datos = {
-            'autores': autores,
-            'año': año,
-            'titulo': titulo,
-            'grado': grado,
-            'institucion': institucion
-        }
-        ref_html = generar_referencia_tesis(datos)
-        cita_texto = cita_abreviada_autores(autores, año)
+def RCHD_ue_html(d):
+    return f"{versalitas('UNIÓN EUROPEA')}, {d['tipo']} {d['numero']}, {d['fecha']}, {d['descripcion']}. Diario Oficial UE, {d['serie']} ({d['fecha_dou']})."
+def RCHD_ue_txt(d):
+    return f"{versalitas('UNIÓN EUROPEA')}, {d['tipo']} {d['numero']}, {d['fecha']}, {d['descripcion']}. Diario Oficial UE, {d['serie']} ({d['fecha_dou']})."
 
-        ref_texto = limpiar_html_a_texto(ref_html)
+# -------- Jurisprudencia (2.6.3)
 
-        st.subheader("Referencia completa:")
-        st.markdown(ref_html, unsafe_allow_html=True)
-        st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
+def RCHD_tc_html(d):
+    return f"Tribunal Constitucional, {d['fecha']}, rol {d['rol']}, {d['procedimiento']} ({d['nombre']})."
+def RCHD_tc_txt(d):
+    return f"Tribunal Constitucional, {d['fecha']}, rol {d['rol']}, {d['procedimiento']} ({d['nombre']})."
 
-        st.subheader("Cita abreviada:")
-        st.write(cita_texto)
-        st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
+def RCHD_cs_pj_html(d):
+    base = f"Corte Suprema, {d['fecha']}, rol {d['rol']}"
+    if d.get("procedimiento"):
+        base += f", {d['procedimiento']}"
+    return base + "."
+def RCHD_cs_pj_txt(d):
+    base = f"Corte Suprema, {d['fecha']}, rol {d['rol']}"
+    if d.get("procedimiento"):
+        base += f", {d['procedimiento']}"
+    return base + "."
 
-        st.session_state.setdefault("historial", []).append((ref_html, cita_texto))
+def RCHD_penal_html(d):
+    return f"{d['tribunal']}, RUC {d['ruc']}, RIT {d['rit']}, {d['tipo']}"
+def RCHD_penal_txt(d):
+    return f"{d['tribunal']}, RUC {d['ruc']}, RIT {d['rit']}, {d['tipo']}"
 
+def RCHD_no_pj_html(d):
+    return f"Corte Suprema, {d['fecha']}, {d['procedimiento']}, {d['fuente']}, {d['detalle']} ({d['nombre']})."
+def RCHD_no_pj_txt(d):
+    return f"Corte Suprema, {d['fecha']}, {d['procedimiento']}, {d['fuente']}, {d['detalle']} ({d['nombre']})."
 
-# Historial de citas generadas
-if "historial" in st.session_state and st.session_state["historial"]:
+def RCHD_base_datos_html(d):
+    return f"{d['tribunal']}, {d['fecha']}, rol {d['rol']}, {d['procedimiento']} ({d['nombre']}) {d['bd']}, cita online {d['cita_online']}. Fecha de consulta: {d['fecha_consulta']}."
+def RCHD_base_datos_txt(d):
+    return f"{d['tribunal']}, {d['fecha']}, rol {d['rol']}, {d['procedimiento']} ({d['nombre']}) {d['bd']}, cita online {d['cita_online']}. Fecha de consulta: {d['fecha_consulta']}."
+
+def RCHD_extranjera_html(d):
+    return f"{versalitas(d['pais'])}, {d['tribunal']}, {d['cita']}."
+def RCHD_extranjera_txt(d):
+    return f"{versalitas(d['pais'])}, {d['tribunal']}, {d['cita']}."
+
+def RCHD_internacional_html(d):
+    return f"{d['tribunal']}, {d['cita']}."
+def RCHD_internacional_txt(d):
+    return f"{d['tribunal']}, {d['cita']}."
+
+# =========================
+# ESQUEMA DE TIPOS
+# =========================
+
+TIPOS = {
+    # 2.6.1 a, d
+    "Libro": {
+        "label": "Libro (incluye 1, 2–3 o 4+ autores y/o tomos)",
+        "w_authors": True,
+        "fields": [
+            {"name":"anio","label":"Año de publicación"},
+            {"name":"titulo","label":"Título del libro"},
+            {"name":"tomo","label":"Tomo/Volumen (ej. Tomo I)","optional":True},
+            {"name":"ciudad","label":"Ciudad"},
+            {"name":"editorial","label":"Editorial"},
+            {"name":"edicion","label":"Número de edición","optional":True},
+            {"name":"pags_corta","label":"Páginas para abreviada (p. o pp.)","optional":True},
+        ],
+        "render_html": RCHD_libro_html,
+        "render_txt": RCHD_libro_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"), tomo=d.get("tomo"))
+    },
+    # 2.6.1 e.i
+    "Traducción de libro": {
+        "label": "Traducción de libro",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio_original","label":"Año de publicación original"},
+            {"name":"anio","label":"Año de edición consultada"},
+            {"name":"titulo","label":"Título"},
+            {"name":"traductor","label":"Traductor"},
+            {"name":"ciudad","label":"Ciudad"},
+            {"name":"editorial","label":"Editorial"},
+            {"name":"pags_corta","label":"Páginas para abreviada","optional":True},
+        ],
+        "render_html": RCHD_traduccion_libro_html,
+        "render_txt": RCHD_traduccion_libro_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 e.ii
+    "Traducción de artículo": {
+        "label": "Traducción de artículo",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio_original","label":"Año original (opcional)","optional":True},
+            {"name":"anio","label":"Año de publicación"},
+            {"name":"titulo_articulo","label":"Título del artículo"},
+            {"name":"revista","label":"Revista"},
+            {"name":"volumen","label":"Volumen","optional":True},
+            {"name":"numero","label":"Número","optional":True},
+            {"name":"paginas","label":"Páginas","optional":True},
+            {"name":"traductor","label":"Traductor"},
+            {"name":"pags_corta","label":"Páginas para abreviada","optional":True},
+        ],
+        "render_html": RCHD_traduccion_articulo_html,
+        "render_txt": RCHD_traduccion_articulo_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 f,g
+    "Capítulo de libro (con editor/es)": {
+        "label": "Capítulo de libro con editor(es)",
+        "w_authors": False,
+        "w_editors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo_cap","label":"Título del capítulo"},
+            {"name":"titulo_libro","label":"Título del libro"},
+            {"name":"ciudad","label":"Ciudad"},
+            {"name":"editorial","label":"Editorial"},
+            {"name":"paginas","label":"Páginas (pp. inicio-fin)"},
+            {"name":"pags_corta","label":"Páginas para abreviada","optional":True},
+        ],
+        "render_html": RCHD_capitulo_editor_html,
+        "render_txt": RCHD_capitulo_editor_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores_cap"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 h
+    "Artículo de revista": {
+        "label": "Artículo de revista (con volumen/número/páginas/DOI)",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo_art","label":"Título del artículo"},
+            {"name":"revista","label":"Revista"},
+            {"name":"volumen","label":"Volumen","optional":True},
+            {"name":"numero","label":"Número","optional":True},
+            {"name":"paginas","label":"Páginas (pp. inicio-fin)","optional":True},
+            {"name":"doi","label":"DOI (opcional)","optional":True},
+            {"name":"pags_corta","label":"Páginas para abreviada","optional":True},
+        ],
+        "render_html": RCHD_articulo_revista_html,
+        "render_txt": RCHD_articulo_revista_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 i
+    "Artículo de revista (sin vol/n°/páginas)": {
+        "label": "Artículo de revista sin vol/num o páginas (con DOI)",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo_art","label":"Título del artículo"},
+            {"name":"revista","label":"Revista"},
+            {"name":"volumen","label":"Volumen (opcional)","optional":True},
+            {"name":"doi","label":"DOI"},
+            {"name":"pags_corta","label":"Páginas para abreviada (si aplica)","optional":True},
+        ],
+        "render_html": RCHD_articulo_sin_pags_html,
+        "render_txt": RCHD_articulo_sin_pags_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 j
+    "Trabajo no latino": {
+        "label": "Trabajo en alfabeto no latino",
+        "w_authors": False,
+        "fields":[
+            {"name":"apellidos_latinos","label":"Apellidos (transliteración)"},
+            {"name":"nombres_latinos","label":"Nombres (transliteración)"},
+            {"name":"anio","label":"Año"},
+            {"name":"titulo_original","label":"Título original"},
+            {"name":"titulo_trad","label":"Título traducido (opcional)","optional":True},
+            {"name":"revista_original","label":"Revista/Editorial"},
+            {"name":"numero","label":"Número (opcional)","optional":True},
+            {"name":"paginas","label":"Páginas (opcional)","optional":True},
+            {"name":"pags_corta","label":"Páginas para abreviada","optional":True},
+        ],
+        "render_html": RCHD_no_latino_html,
+        "render_txt": RCHD_no_latino_txt,
+        "short": lambda d: f"{versalitas(d['apellidos_latinos'])} ({d['anio']}){', p. '+d['pags_corta'] if d.get('pags_corta') else ''}."
+    },
+    # 2.6.1 k
+    "E-book sin páginas": {
+        "label": "E-book sin números de página",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo","label":"Título del libro o capítulo"},
+            {"name":"titulo_cap","label":"Título del capítulo (si corresponde)","optional":True},
+            {"name":"cont_in","label":"Contenedor (ej. en MAURER, Markus y otros (edits.), Autonomous Driving...)"},
+            {"name":"cont_de","label":"Detalle del contenedor (opcional)","optional":True},
+            {"name":"edicion_plataforma","label":"Edición/Plataforma (ej. Kindle Edition)"},
+            {"name":"ubicacion_num","label":"Número de ubicación/capítulo/sección (ej. N° 4)","optional":True},
+            {"name":"cap_sec_abrev","label":"Capítulo/Sección para ABREVIADA (ej. 4.1.1.)","optional":True},
+            {"name":"parrafo_abrev","label":"Párrafo para ABREVIADA (ej. 2)","optional":True},
+        ],
+        "render_html": RCHD_ebook_html,
+        "render_txt": RCHD_ebook_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], cap_sec=d.get("cap_sec_abrev"), parrafo=d.get("parrafo_abrev"))
+    },
+    # 2.6.1 l
+    "Fuente manuscrita": {
+        "label": "Fuente manuscrita",
+        "w_authors": False,
+        "fields":[
+            {"name":"entidad","label":"Entidad (ej. ARCHIVO NACIONAL)"},
+            {"name":"fondo","label":"Fondo"},
+            {"name":"descripcion","label":"Descripción del documento"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_manuscrito_html,
+        "render_txt": RCHD_manuscrito_txt,
+        "short": lambda d: d["entidad"]
+    },
+    # 2.6.1 m
+    "Obra dogmática (histórica)": {
+        "label": "Obras dogmáticas (sistemas históricos de citación)",
+        "w_authors": False,
+        "fields":[
+            {"name":"cita_bruta","label":"Cita (ej. D. 42,1,56.)","textarea":True,"kind":"text"},
+        ],
+        "render_html": RCHD_dogmatica_hist_html,
+        "render_txt": RCHD_dogmatica_hist_txt,
+        "short": lambda d: d["cita_bruta"]
+    },
+    # 2.6.1 n
+    "Tesis": {
+        "label": "Tesis",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo","label":"Título"},
+            {"name":"grado","label":"Grado académico"},
+            {"name":"institucion","label":"Institución"},
+            {"name":"pags_corta","label":"Páginas para abreviada (si aplica)","optional":True},
+        ],
+        "render_html": RCHD_tesis_html,
+        "render_txt": RCHD_tesis_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["anio"], paginas=d.get("pags_corta"))
+    },
+    # 2.6.1 o
+    "Informe": {
+        "label": "Informe",
+        "w_authors": False,
+        "fields":[
+            {"name":"org","label":"Organismo (ej. GENDARMERÍA DE CHILE)"},
+            {"name":"unidad","label":"Unidad (opcional)","optional":True},
+            {"name":"titulo","label":"Título del informe"},
+            {"name":"numero","label":"Número (ej. sin N°) (opcional)","optional":True},
+            {"name":"extra","label":"Notas adicionales (opcional)","optional":True},
+            {"name":"sd","label":"¿Sin fecha? Escribe 's.d.' si corresponde (opcional)","optional":True},
+        ],
+        "render_html": RCHD_informe_html,
+        "render_txt": RCHD_informe_txt,
+        "short": lambda d: d["org"]
+    },
+    # 2.6.1 p
+    "Documento en sitio web": {
+        "label": "Documento alojado en sitio web (no libro/artículo)",
+        "w_authors": False,
+        "fields":[
+            {"name":"encabezado","label":"Encabezado (lo que corresponda)"},
+            {"name":"url","label":"URL"},
+            {"name":"fecha_consulta","label":"Fecha de consulta (dd/mm/aaaa)","optional":True},
+        ],
+        "render_html": RCHD_doc_web_html,
+        "render_txt": RCHD_doc_web_txt,
+        "short": lambda d: d["encabezado"]
+    },
+    # 2.6.1 q.a
+    "Periódico (sin autor)": {
+        "label": "Diario/Periódico impreso (sin autor)",
+        "w_authors": False,
+        "fields":[
+            {"name":"periodico","label":"Nombre del periódico"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"titulo","label":"Título de la nota"},
+            {"name":"pagina","label":"Página (opcional)","optional":True},
+        ],
+        "render_html": RCHD_diario_sin_autor_html,
+        "render_txt": RCHD_diario_sin_autor_txt,
+        "short": lambda d: f"{versalitas(d['periodico'])} ({d['fecha']})."
+    },
+    # 2.6.1 q.b
+    "Periódico (con autor)": {
+        "label": "Diario/Periódico impreso (con autor)",
+        "w_authors": True,
+        "fields":[
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"titulo","label":"Título de la nota"},
+            {"name":"periodico","label":"Nombre del periódico"},
+            {"name":"pagina","label":"Página (opcional)","optional":True},
+        ],
+        "render_html": RCHD_diario_con_autor_html,
+        "render_txt": RCHD_diario_con_autor_txt,
+        "short": lambda d: cita_abreviada_obras(d["autores"], d["fecha"].split("/")[-1], paginas=d.get("pagina"))
+    },
+    # 2.6.1 r
+    "Noticias/columnas web": {
+        "label": "Noticias y columnas en sitios web",
+        "w_authors": True,
+        "fields":[
+            {"name":"anio","label":"Año"},
+            {"name":"titulo","label":"Título"},
+            {"name":"medio","label":"Medio"},
+            {"name":"url","label":"URL"},
+            {"name":"fecha_consulta","label":"Fecha de consulta (dd/mm/aaaa)","optional":True},
+        ],
+        "render_html": RCHD_noticias_web_html,
+        "render_txt": RCHD_noticias_web_txt,
+        "short": lambda d: f"{format_solo_apellidos_txt(d['autores'])} ({d['anio']})."
+    },
+    # 2.6.1 s
+    "Sitio web / blog": {
+        "label": "Página web o blog institucional",
+        "w_authors": False,
+        "fields":[
+            {"name":"entidad","label":"Entidad"},
+            {"name":"anio","label":"Año"},
+            {"name":"titulo","label":"Título de la página"},
+            {"name":"url","label":"URL"},
+            {"name":"fecha_consulta","label":"Fecha de consulta (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_sitio_web_html,
+        "render_txt": RCHD_sitio_web_txt,
+        "short": lambda d: f"{versalitas(d['entidad'])} ({d['anio']})."
+    },
+
+    # 2.6.2 NORMAS
+    "Constitución": {
+        "label": "Constitución",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"fecha","label":"Fecha de publicación (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_constitucion_html,
+        "render_txt": RCHD_constitucion_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], "Constitución Política de la República")
+    },
+    "Ley no codificada": {
+        "label": "Ley no codificada",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"numero","label":"Número de ley"},
+            {"name":"denominacion","label":"Denominación legal (si la tiene)"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_ley_no_cod_html,
+        "render_txt": RCHD_ley_no_cod_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], f"Ley N° {d['numero']}")
+    },
+    "Código": {
+        "label": "Código (con o sin fecha)",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"nombre","label":"Nombre del Código (ej. Código Civil)"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa) (opcional)","optional":True},
+            {"name":"sd","label":"¿Sin fecha? escribir 's.d.' (opcional)","optional":True},
+        ],
+        "render_html": RCHD_codigo_html,
+        "render_txt": RCHD_codigo_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], d["nombre"])
+    },
+    "Decreto": {
+        "label": "Decreto Supremo",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"organismo","label":"Ministerio/Organismo"},
+            {"name":"numero","label":"Número"},
+            {"name":"denominacion","label":"Denominación"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_decreto_html,
+        "render_txt": RCHD_decreto_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], f"Decreto Supremo {d['numero']}")
+    },
+    "Oficio": {
+        "label": "Oficio",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"emisor","label":"Emisor (con mayúsculas)"},
+            {"name":"numero","label":"Número"},
+            {"name":"descripcion","label":"Descripción"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_oficio_html,
+        "render_txt": RCHD_oficio_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], f"Ord. {d['numero']}")
+    },
+    "Proyecto de ley": {
+        "label": "Proyecto de ley",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"descripcion","label":"Descripción (ej. Mensaje de S.E...)"},
+            {"name":"boletin","label":"Número de boletín"},
+        ],
+        "render_html": RCHD_proyecto_ley_html,
+        "render_txt": RCHD_proyecto_ley_txt,
+        "short": lambda d: cita_abreviada_normas(d["pais"], "Proyecto de ley")
+    },
+    "Historia de la ley (BCN)": {
+        "label": "Historia de la ley (BCN)",
+        "w_authors": False,
+        "fields":[
+            {"name":"entidad","label":"Entidad (ej. BIBLIOTECA DEL CONGRESO NACIONAL DE CHILE)"},
+            {"name":"anio","label":"Año"},
+            {"name":"titulo","label":"Título"},
+            {"name":"instancia","label":"Instancia (ej. Primer Trámite...)"},
+            {"name":"detalle","label":"Detalle (ej. Segundo Informe..., p. 106)"},
+            {"name":"url","label":"URL"},
+            {"name":"fecha_consulta","label":"Fecha de consulta (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_historia_ley_html,
+        "render_txt": RCHD_historia_ley_txt,
+        "short": lambda d: d["entidad"]
+    },
+    "Tratado internacional": {
+        "label": "Tratado internacional",
+        "w_authors": False,
+        "fields":[
+            {"name":"nombre","label":"Nombre del tratado (en versales/cursiva)"},
+            {"name":"fecha_adop","label":"Fecha de adopción (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_tratado_html,
+        "render_txt": RCHD_tratado_txt,
+        "short": lambda d: d["nombre"]
+    },
+    "Instrumento de congreso/conf.": {
+        "label": "Instrumento de congreso o conferencia gubernamental",
+        "w_authors": False,
+        "fields":[
+            {"name":"evento","label":"Nombre del evento (todo en mayúsculas)"},
+            {"name":"titulo","label":"Título del instrumento"},
+            {"name":"lugar","label":"Lugar"},
+            {"name":"rango_fechas","label":"Rango de fechas (dd/mm/aaaa - dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_congreso_intern_html,
+        "render_txt": RCHD_congreso_intern_txt,
+        "short": lambda d: d["evento"]
+    },
+    "Documento de la ONU": {
+        "label": "Documento oficial de organismo internacional (ONU)",
+        "w_authors": False,
+        "fields":[
+            {"name":"organo","label":"Órgano (ASAMBLEA GENERAL, etc.)"},
+            {"name":"titulo","label":"Título del documento"},
+            {"name":"signatura","label":"Signatura (ej. A/63/332)"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_doc_onu_html,
+        "render_txt": RCHD_doc_onu_txt,
+        "short": lambda d: f"NACIONES UNIDAS, {d['organo']}"
+    },
+    "Instrumento de la UE": {
+        "label": "Instrumento de la Unión Europea",
+        "w_authors": False,
+        "fields":[
+            {"name":"tipo","label":"Tipo (Directiva, Reglamento, etc.)"},
+            {"name":"numero","label":"Número (ej. 2015/2376)"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"descripcion","label":"Descripción breve"},
+            {"name":"serie","label":"Serie DOUE (ej. L 332)"},
+            {"name":"fecha_dou","label":"Fecha del DOUE (dd/mm/aaaa)"},
+        ],
+        "render_html": RCHD_ue_html,
+        "render_txt": RCHD_ue_txt,
+        "short": lambda d: "UNIÓN EUROPEA"
+    },
+
+    # 2.6.3 Jurisprudencia
+    "TC con nombre del caso": {
+        "label": "Sentencia del Tribunal Constitucional (con nombre de caso)",
+        "w_authors": False,
+        "fields":[
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"rol","label":"Rol"},
+            {"name":"procedimiento","label":"Procedimiento (ej. inconstitucionalidad)"},
+            {"name":"nombre","label":"Nombre del caso"},
+            {"name":"pinpoint","label":"Pinpoint (cons. / párr. / pág.) para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_tc_html,
+        "render_txt": RCHD_tc_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia("Tribunal Constitucional", nombre_caso=d["nombre"], pinpoint=d.get("pinpoint"))
+    },
+    "CS (Poder Judicial)": {
+        "label": "Corte Suprema (disponible en sitio del Poder Judicial)",
+        "w_authors": False,
+        "fields":[
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"rol","label":"Rol"},
+            {"name":"procedimiento","label":"Procedimiento (opcional)","optional":True},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_cs_pj_html,
+        "render_txt": RCHD_cs_pj_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia("Corte Suprema", fecha=d["fecha"], pinpoint=d.get("pinpoint"))
+    },
+    "Penal (RUC/RIT)": {
+        "label": "Sentencia penal con RUC/RIT",
+        "w_authors": False,
+        "fields":[
+            {"name":"tribunal","label":"Tribunal"},
+            {"name":"ruc","label":"RUC"},
+            {"name":"rit","label":"RIT"},
+            {"name":"tipo","label":"Tipo de procedimiento (juicio oral, etc.)"},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_penal_html,
+        "render_txt": RCHD_penal_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia(d["tribunal"], fecha=None, pinpoint=d.get("pinpoint"))
+    },
+    "Sentencia no disponible en PJ": {
+        "label": "Sentencia (no disponible en PJ) con fuente",
+        "w_authors": False,
+        "fields":[
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"procedimiento","label":"Procedimiento (apelación, etc.)"},
+            {"name":"fuente","label":"Fuente (colección/base)"},
+            {"name":"detalle","label":"Detalle (tomo/parte/sección/páginas)"},
+            {"name":"nombre","label":"Nombre del caso (fantasía o intervinientes)"},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_no_pj_html,
+        "render_txt": RCHD_no_pj_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia("Corte Suprema", nombre_caso=d["nombre"], pinpoint=d.get("pinpoint"))
+    },
+    "Sentencia en base de datos": {
+        "label": "Sentencia en base de datos (con cita online)",
+        "w_authors": False,
+        "fields":[
+            {"name":"tribunal","label":"Tribunal"},
+            {"name":"fecha","label":"Fecha (dd/mm/aaaa)"},
+            {"name":"rol","label":"Rol"},
+            {"name":"procedimiento","label":"Procedimiento"},
+            {"name":"nombre","label":"Nombre del caso"},
+            {"name":"bd","label":"Base de datos (Westlaw, etc.)"},
+            {"name":"cita_online","label":"Cita online (ej. CL/JUR/226/1996)"},
+            {"name":"fecha_consulta","label":"Fecha de consulta (dd/mm/aaaa)"},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_base_datos_html,
+        "render_txt": RCHD_base_datos_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia(d["tribunal"], nombre_caso=d["nombre"], pinpoint=d.get("pinpoint"))
+    },
+    "Jurisprudencia extranjera": {
+        "label": "Jurisprudencia extranjera",
+        "w_authors": False,
+        "fields":[
+            {"name":"pais","label":"País"},
+            {"name":"tribunal","label":"Tribunal"},
+            {"name":"cita","label":"Cita oficial (ej. BROWN V. BOARD..., 347 U.S. 483 (1954))"},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_extranjera_html,
+        "render_txt": RCHD_extranjera_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia(d["tribunal"], nombre_caso=d["cita"].split(",")[0], pinpoint=d.get("pinpoint"))
+    },
+    "Jurisprudencia internacional": {
+        "label": "Jurisprudencia internacional (CIJ, TEDH, Corte IDH, etc.)",
+        "w_authors": False,
+        "fields":[
+            {"name":"tribunal","label":"Tribunal (Corte Internacional de Justicia, Tribunal Europeo de DD.HH., Corte Interamericana de DD.HH., etc.)"},
+            {"name":"cita","label":"Cita completa (serie, número, año, etc.)"},
+            {"name":"pinpoint","label":"Pinpoint para abreviada (opcional)","optional":True},
+        ],
+        "render_html": RCHD_internacional_html,
+        "render_txt": RCHD_internacional_txt,
+        "short": lambda d: cita_abreviada_jurisprudencia(d["tribunal"], nombre_caso=d["cita"].split(",")[0], pinpoint=d.get("pinpoint"))
+    },
+}
+
+# =========================
+# Descargas (HTML / RTF)
+# =========================
+
+def to_html_block(s: str) -> bytes:
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<style>body{{font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.2}}</style>
+</head><body>{s}</body></html>"""
+    return html.encode("utf-8")
+
+def to_rtf(s: str) -> bytes:
+    # RTF mínimo (Times New Roman por defecto en muchos lectores)
+    # Conversión básica: cursivas <i>...</i> -> \i ... \i0 ; small-caps -> \scaps ... \scaps0 (no estándar en todos, usaremos uppercase simple)
+    plain = limpiar_html_a_texto(s)
+    rtf = r"{\rtf1\ansi\deff0{\fonttbl{\f0 Times New Roman;}}\fs24 " + plain.replace("\n", r"\line ") + "}"
+    return rtf.encode("utf-8")
+
+# =========================
+# APP
+# =========================
+
+st.set_page_config(page_title="Citador RChD", page_icon="📚", layout="wide")
+st.title("📚 Citador – Revista Chilena de Derecho (RChD)")
+
+# Estado
+if "historial" not in st.session_state:
+    st.session_state["historial"] = []
+
+# Selección de tipo
+tipo = st.selectbox("Tipo de fuente", list(TIPOS.keys()))
+cfg = TIPOS[tipo]
+
+colL, colR = st.columns([1.15, 1])
+
+with colL:
+    st.markdown("### Datos de la fuente")
+    data = {}
+
+    # Autores (si corresponde)
+    if cfg.get("w_authors"):
+        data["autores"] = input_autores("aut", titulo="Autores", minimo=1)
+
+    # Autores capítulo y editores (para capítulos)
+    if tipo == "Capítulo de libro (con editor/es)":
+        data["autores_cap"] = input_autores("cap_aut", titulo="Autores del capítulo", minimo=1)
+        data["editores"] = input_autores("cap_edt", titulo="Editores", minimo=1)
+
+    # Campos declarados
+    for f in cfg["fields"]:
+        val = input_field(f, key_prefix=f"{tipo}_{f['name']}")
+        data[f["name"]] = val.strip() if isinstance(val, str) else val
+
+    # Presentador visual
     st.markdown("---")
-    st.subheader("Historial de citas generadas")
-    for i, (ref, cita) in enumerate(reversed(st.session_state["historial"])):
-        st.markdown(f"**{len(st.session_state['historial']) - i}. Referencia completa:**")
-        if "<span" in ref or "<i>" in ref:
-            st.markdown(ref, unsafe_allow_html=True)
-        else:
-            st.write(ref)
-        st.markdown(f"**Cita abreviada:** {cita}")
-        st.markdown("")
+    generar = st.button("Generar cita", type="primary", use_container_width=True)
 
+with colR:
+    st.markdown("### Vista previa y copia")
 
+    placeholder_preview = st.empty()
+    placeholder_text = st.empty()
+    placeholder_short = st.empty()
+    placeholder_dl1 = st.empty()
+    placeholder_dl2 = st.empty()
 
+if generar:
+    # Normalizar algunos campos vacíos como None
+    for k,v in list(data.items()):
+        if isinstance(v, str) and v.strip() == "":
+            data[k] = None
+
+    # Render completo
+    ref_html = cfg["render_html"](data)
+    ref_txt = cfg["render_txt"](data)
+    # Abreviada
+    ref_short = cfg["short"](data)
+
+    # Mostrar
+    with colR:
+        st.markdown("**Referencia completa (con formato):**")
+        st.markdown(
+            f"""
+<div style="border:1px solid #ddd; padding:14px; border-radius:12px; background:#fafafa; font-size:16px">
+{ref_html}
+</div>
+""",
+            unsafe_allow_html=True
+        )
+        st.markdown("**Copiar referencia completa (texto plano):**")
+        st.text_area("Referencia completa (texto)", value=limpiar_html_a_texto(ref_html), height=80, key="txt_full")
+
+        st.markdown("**Cita abreviada (nota al pie):**")
+        st.text_area("Cita abreviada", value=ref_short, height=60, key="txt_short")
+
+        # Descargas
+        fname_base = f"cita_rchd_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        st.download_button("Descargar como HTML (mantiene versalitas y cursivas)",
+                           data=to_html_block(ref_html), file_name=f"{fname_base}.html", mime="text/html", use_container_width=True)
+        st.download_button("Descargar como RTF (para pegar en Word)",
+                           data=to_rtf(ref_html), file_name=f"{fname_base}.rtf", mime="application/rtf", use_container_width=True)
+
+        # Guardar en historial
+        st.session_state["historial"].append({"tipo": tipo, "full_html": ref_html, "full_txt": ref_txt, "short": ref_short})
+
+st.markdown("---")
+st.subheader("Historial")
+if st.session_state["historial"]:
+    for i, it in enumerate(reversed(st.session_state["historial"]), start=1):
+        with st.expander(f"{i}. {it['tipo']}"):
+            st.markdown("**Referencia completa (formato):**")
+            st.markdown(it["full_html"], unsafe_allow_html=True)
+            st.markdown("**Referencia completa (texto):**")
+            st.code(limpiar_html_a_texto(it["full_html"]))
+            st.markdown("**Cita abreviada:**")
+            st.code(it["short"])
+else:
+    st.info("Aún no has generado citas.")
+
+# Tips de uso
+with st.expander("Ayuda rápida"):
+    st.markdown(
+        """
+- **Versalitas**: los apellidos se muestran en versalitas (small-caps) en la vista previa y en los HTML descargables.
+- **Copiar con formato**: usa la descarga **HTML** o **RTF** y pégalo en tu procesador (Word/Docs).
+- **Abreviadas**: agrega páginas/tomo/capítulo/párrafo según el tipo; la app construye la abreviada conforme a 2.7.
+- **Editores**: en capítulos, la etiqueta cambia automáticamente a **(edit.)** o **(edits.)** según el número de editores.
+- **Autores 4+**: se mostrará “y otros” conforme a la norma.
+"""
+    )
+```

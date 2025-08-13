@@ -2,34 +2,47 @@ import streamlit as st
 import re
 
 # ------------------ UTILIDADES DE FORMATO ------------------
-def versalitas(text):
-    return f"<span style='font-variant: small-caps;'>{text.upper()}</span>"
+def versalitas(texto):
+    return texto.upper() if texto else ""
 
-def italics(text):
-    return f"<i>{text}</i>"
-
-def quotes(text):
-    return f"“{text}”"
+def italics(texto):
+    return f"<i>{texto}</i>" if texto else ""
 
 def limpiar_html_a_texto(html):
     text = re.sub(r'<.*?>', '', html)
     return text.strip()
 
-def cita_abreviada(autores, año, paginas=None):
-    if not autores:
-        return f"({año})"
+def formatear_autores_html(autores):
+    """Devuelve string HTML para la referencia completa"""
     n = len(autores)
+    if n == 0:
+        return ""
+    def formato(a):
+        ap = versalitas(a['apellido1'])
+        if a['apellido2']:
+            ap += f" {versalitas(a['apellido2'])}"
+        return f"{ap}, {a['nombre']}"
     if n == 1:
-        ap = autores[0].upper()
-        return f"{ap} ({año})" + (f", p. {paginas}" if paginas else "")
+        return formato(autores[0])
     elif 2 <= n <= 3:
-        aps = " y ".join([a.upper() for a in autores])
+        return " y ".join(formato(a) for a in autores)
+    else:
+        return f"{formato(autores[0])} y otros"
+
+def cita_abreviada(autores, año, paginas=None):
+    """Devuelve la cita abreviada según número de autores"""
+    n = len(autores)
+    if n == 0:
+        return f"({año})"
+    elif n == 1:
+        return f"{versalitas(autores[0]['apellido1'])} ({año})" + (f", p. {paginas}" if paginas else "")
+    elif 2 <= n <= 3:
+        aps = " y ".join([versalitas(a['apellido1']) for a in autores])
         return f"{aps} ({año})" + (f", p. {paginas}" if paginas else "")
     else:
-        ap = autores[0].upper()
-        return f"{ap} y otros ({año})" + (f", p. {paginas}" if paginas else "")
+        return f"{versalitas(autores[0]['apellido1'])} y otros ({año})" + (f", p. {paginas}" if paginas else "")
 
-# ------------------ PLANTILLAS DE CITA ------------------
+# ------------------ PLANTILLAS ------------------
 PLANTILLAS = {
     "Libro": "{autor} ({año}): {titulo} ({lugar}, {editorial}{edicion}).",
     "Traducción de libro": "{autor} ([{año_original}] {año}): {titulo} (trad. {traductor}, {lugar}, {editorial}).",
@@ -43,40 +56,55 @@ PLANTILLAS = {
 
 # ------------------ CAMPOS POR TIPO ------------------
 CAMPOS = {
-    "Libro": ["autor", "año", "titulo", "lugar", "editorial", "edicion"],
-    "Traducción de libro": ["autor", "año_original", "año", "titulo", "traductor", "lugar", "editorial"],
-    "Capítulo de libro": ["autor", "año", "titulo_cap", "editor", "titulo_libro", "lugar", "editorial", "paginas"],
-    "Artículo de revista": ["autor", "año", "titulo_art", "revista", "volumen", "numero", "paginas"],
+    "Libro": ["titulo", "año", "lugar", "editorial", "edicion"],
+    "Traducción de libro": ["titulo", "año_original", "año", "traductor", "lugar", "editorial"],
+    "Capítulo de libro": ["titulo_cap", "año", "editor", "titulo_libro", "lugar", "editorial", "paginas"],
+    "Artículo de revista": ["titulo_art", "año", "revista", "volumen", "numero", "paginas"],
     "Norma": ["pais", "tipo_norma", "nombre_norma", "fecha"],
     "Jurisprudencia": ["tribunal", "fecha", "rol", "nombre_caso", "info_extra"],
-    "Página web o blog": ["autor", "año", "titulo", "url", "fecha"],
-    "Tesis": ["autor", "año", "titulo", "grado", "institucion"]
+    "Página web o blog": ["titulo", "año", "url", "fecha"],
+    "Tesis": ["titulo", "año", "grado", "institucion"]
 }
 
 # ------------------ APP STREAMLIT ------------------
 st.title("📚 Citador - Revista Chilena de Derecho")
 
 tipo = st.selectbox("Selecciona el tipo de cita", list(PLANTILLAS.keys()))
-datos = {}
 
-st.subheader("Completa los datos")
+# Autores
+st.subheader("Autores")
+num_autores = st.number_input("Número de autores", min_value=0, max_value=10, value=1)
+autores = []
+for i in range(num_autores):
+    st.markdown(f"**Autor {i+1}**")
+    apellido1 = st.text_input(f"Primer apellido", key=f"ape1_{i}")
+    apellido2 = st.text_input(f"Segundo apellido (opcional)", key=f"ape2_{i}")
+    nombre = st.text_input(f"Nombre", key=f"nom_{i}")
+    autores.append({'apellido1': apellido1.strip(), 'apellido2': apellido2.strip(), 'nombre': nombre.strip()})
+
+# Otros campos
+st.subheader("Datos de la referencia")
+datos = {}
 for campo in CAMPOS[tipo]:
     datos[campo] = st.text_input(campo.capitalize())
 
 paginas_cita = st.text_input("Número de página para cita abreviada (opcional)")
 
-# Para la cita abreviada, pedimos lista de autores separados por coma
-autores_corta = st.text_input("Autores para cita abreviada (apellidos, separados por coma)")
-
 if st.button("Generar cita"):
     plantilla = PLANTILLAS[tipo]
+
+    # Autor en HTML
+    autor_html = formatear_autores_html(autores)
+
     # Aplicar italics a títulos y revistas
-    cita_html = plantilla.format(**{k: italics(v) if "titulo" in k or "revista" in k else v for k,v in datos.items()})
+    datos_formateados = {k: italics(v) if "titulo" in k or "revista" in k else v for k,v in datos.items()}
+    datos_formateados['autor'] = autor_html
+
+    cita_html = plantilla.format(**datos_formateados)
     cita_texto = limpiar_html_a_texto(cita_html)
 
     # Cita abreviada
-    autores_lista = [a.strip() for a in autores_corta.split(",")] if autores_corta else []
-    cita_abrev = cita_abreviada(autores_lista, datos.get("año", ""), paginas=paginas_cita if paginas_cita else None)
+    cita_abrev = cita_abreviada(autores, datos.get("año",""), paginas=paginas_cita if paginas_cita else None)
 
     st.markdown("### Vista previa (con formato)")
     st.markdown(cita_html, unsafe_allow_html=True)
@@ -84,21 +112,12 @@ if st.button("Generar cita"):
     st.markdown("### Cita abreviada")
     st.write(cita_abrev)
 
-    # Botones de copiar usando JavaScript
-    st.markdown(
-        f"""
-        <button onclick="navigator.clipboard.writeText(`{cita_html}`)">📋 Copiar cita completa con formato</button>
-        <button onclick="navigator.clipboard.writeText(`{cita_texto}`)">📋 Copiar cita completa texto plano</button>
-        <button onclick="navigator.clipboard.writeText(`{cita_abrev}`)">📋 Copiar cita abreviada</button>
-        """,
-        unsafe_allow_html=True
-    )
-
     # Historial
     if "historial" not in st.session_state:
         st.session_state.historial = []
     st.session_state.historial.append((cita_html, cita_abrev))
 
+# Mostrar historial
 if "historial" in st.session_state and st.session_state.historial:
     st.subheader("Historial de citas")
     for idx, (cita_full, cita_abrev) in enumerate(reversed(st.session_state.historial)):

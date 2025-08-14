@@ -15,11 +15,12 @@ def formatear_autores(autores, html=False, libro=False):
         if a.get('apellido2'):
             ap += f" {versalitas(a['apellido2'])}"
         return f"{ap}, {a['nombre']}" if not html else f"<span style='font-variant: small-caps'>{ap}</span>, {a['nombre']}"
-
+    
     # Si es libro y hay 3 o más autores, mostrar solo el primero + "y otros"
     if libro and n >= 3:
         return f"{formato(autores[0])} y otros"
-
+    
+    # Si no es libro, mantener la lógica normal
     if n == 1:
         return formato(autores[0])
     elif 2 <= n <= 3:
@@ -35,13 +36,12 @@ def cita_abreviada(autores, año, paginas=None, tomo=None, libro=False):
     tomo_str = f", tomo {tomo}" if tomo else ""
     paginas_str = f", p. {paginas}" if paginas else ""
     
+    if libro and n >= 3:
+        return f"{versalitas(autores[0]['apellido1'])} y otros ({año}){tomo_str}{paginas_str}"
+    
     if n == 0:
         return ""
-    
-    if libro and n >= 1:
-        return f"{versalitas(autores[0]['apellido1'])} y otros ({año}){paginas_str}"
-    
-    if n == 1:
+    elif n == 1:
         return f"{versalitas(autores[0]['apellido1'])} ({año}){tomo_str}{paginas_str}"
     elif 2 <= n <= 3:
         return f"{' y '.join([versalitas(a['apellido1']) for a in autores])} ({año}){paginas_str}"
@@ -146,11 +146,16 @@ st.title("Citador RChD Compacto")
 tipo = st.selectbox("Tipo de fuente", list(TIPOS.keys()))
 num_autores = st.number_input("Número de autores", min_value=0, max_value=10, value=1)
 
+# Historial de citas en sesión
+if "historial_citas" not in st.session_state:
+    st.session_state["historial_citas"] = []
+
 # Ajuste para libros con ≥3 autores
-libro_y_otros = tipo == "Libro" and num_autores >= 3
-if libro_y_otros:
+libro_y_otros = False
+if tipo == "Libro" and num_autores >= 3:
     st.info("Se detectaron 3 o más autores: solo se pedirá el primer autor y se agregará 'y otros'.")
     autores = agregar_autores(1)
+    libro_y_otros = True
 else:
     autores = agregar_autores(num_autores) if num_autores > 0 else []
 
@@ -243,6 +248,13 @@ if st.button("Generar cita"):
     ) if tipo in ["Libro", "Traducción de libro", "Capítulo de libro", "Artículo de revista", "Tesis"] else limpiar_html(ref_html)
     ref_texto = limpiar_html(ref_html)
 
+    # Guardar en historial
+    st.session_state.historial_citas.append({
+        "tipo": tipo,
+        "referencia": ref_texto,
+        "cita": cita_texto
+    })
+
     st.subheader("Referencia completa:")
     st.markdown(ref_html, unsafe_allow_html=True)
     st.text_area("Copiar referencia completa:", value=ref_texto, height=80)
@@ -251,6 +263,13 @@ if st.button("Generar cita"):
     st.write(cita_texto)
     st.text_area("Copiar cita abreviada:", value=cita_texto, height=40)
 
+# ---------- Mostrar historial ----------
+if st.session_state.historial_citas:
+    st.subheader("Historial de citas generadas:")
+    for i, item in enumerate(reversed(st.session_state.historial_citas), 1):
+        st.markdown(f"**{i}. {item['tipo']}**")
+        st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
+        st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
 
 
 

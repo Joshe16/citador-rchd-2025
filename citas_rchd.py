@@ -504,7 +504,7 @@ if tipo == "Libro":
         'titulo': st.text_input("Título del libro"),
         'ciudad': st.text_input("Ciudad de publicación (opcional)"),
         'editorial': st.text_input("Editorial (ej: Editorial LexisNexis)"),
-        'edicion': st.text_input("Número de edición (opcional, p.ej. 2)"),
+        'edicion': st.text_input("Número de edición (opcional, p.ej. Segunda)"),
         'tomo': st.text_input("Tomo o volumen (opcional, p.ej. '1' o 'Tomo I')"),
         'paginas': st.text_input("Páginas (opcional para cita abreviada, ej. 45-47)")
     })
@@ -677,5 +677,6 @@ if st.session_state.historial_citas:
         st.markdown(f"**{i}. {item['tipo']}**")
         st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
         st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
+
 
 

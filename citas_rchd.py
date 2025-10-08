@@ -699,5 +699,7 @@ if "historial_citas" in st.session_state and len(st.session_state.historial_cita
 
 if st.button("🧹 Limpiar historial"):
     st.session_state.historial_citas.clear()
-    st.experimental_rerun()
+    st.rerun()
+
+
 

@@ -37,7 +37,7 @@ def to_roman(num):
             i += 1
         return roman_num
     except Exception:
-        return str(num)
+        return r(num)
 
 # ordinal (es) para ediciones simples
 _ORDINAL_ES = {
@@ -56,12 +56,12 @@ def edicion_spanish(ed):
         n = int(ed)
         if n == 1:
             return ""  # no escribir "1 edición"
-        return f"{_ORDINAL_ES.get(n, str(n)+'ª')} edición"
+        return f"{_ORDINAL_ES.get(n, r(n)+'ª')} edición"
     except Exception:
         # si el usuario escribió "segunda" o "2ª", intentar normalizar
-        ed_lower = ed.strip().lower()
+        ed_lower = ed.rip().lower()
         if "ed" in ed_lower or "edición" in ed_lower or "ª" in ed_lower:
-            return ed.strip()
+            return ed.rip()
         return f"{ed.strip()} edición"
 
 def pages_prefix(pags):
@@ -371,8 +371,8 @@ TIPOS = {
 }
 
 # ---------------- Streamlit UI ----------------
-st.set_page_config(page_title="Citador RChD Compacto (mejorado)", layout="wide")
-st.title("Citador RChD Compacto — Versión mejorada (RChD 2025)")
+st.set_page_config(page_title="Citador RChD Consejeria Academica Derecho UC x >> Avanzar", layout="wide")
+st.title("Citador RChD Consejeria Academica Derecho UC x >> Avanzar (RChD 2025)")
 
 with st.sidebar:
     st.header("Ajustes")
@@ -417,7 +417,7 @@ datos = {'autores': autores}
 # Inputs dinámicos por tipo
 if tipo == "Libro":
     datos.update({
-        'año': st.text_input("Año de publicación", placeholder=("Formato dd/mm/aaaa recomendado" if show_help else "")),
+        'año': st.text_input("Año de publicación"),
         'titulo': st.text_input("Título del libro"),
         'ciudad': st.text_input("Ciudad de publicación (opcional)"),
         'editorial': st.text_input("Editorial (ej: Editorial LexisNexis)"),
@@ -560,4 +560,5 @@ if st.session_state.historial_citas:
         st.markdown(f"**{i}. {item['tipo']}**")
         st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
         st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
+
 

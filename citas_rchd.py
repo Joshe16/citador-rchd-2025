@@ -8,16 +8,16 @@ def versalitas(texto):
     return texto.upper() if texto else ""
 
 def smallcaps_html(texto):
-    # preferible: mostrar en small-caps para HTML; el texto ya será uppercase
     return f"<span style='font-variant: small-caps'>{versalitas(texto)}</span>"
 
 def limpiar_html(html_text):
     return re.sub('<.*?>', '', html_text)
 
 def to_roman(num):
-    # conv entero (1-3999) a romano, si falla devuelve original
     try:
         n = int(num)
+        if n <= 0:
+            return str(num)
         val = [
             1000, 900, 500, 400,
             100, 90, 50, 40,
@@ -37,9 +37,8 @@ def to_roman(num):
             i += 1
         return roman_num
     except Exception:
-        return r(num)
+        return str(num)
 
-# ordinal (es) para ediciones simples
 _ORDINAL_ES = {
     2: "segunda",
     3: "tercera",
@@ -52,33 +51,38 @@ _ORDINAL_ES = {
     10: "décima"
 }
 def edicion_spanish(ed):
+    if not ed:
+        return ""
+    ed_clean = str(ed).strip()
     try:
-        n = int(ed)
+        n = int(ed_clean)
         if n == 1:
-            return ""  # no escribir "1 edición"
-        return f"{_ORDINAL_ES.get(n, r(n)+'ª')} edición"
+            return ""
+        return f"{_ORDINAL_ES.get(n, str(n) + 'ª')} edición"
     except Exception:
-        # si el usuario escribió "segunda" o "2ª", intentar normalizar
-        ed_lower = ed.rip().lower()
+        ed_lower = ed_clean.lower()
         if "ed" in ed_lower or "edición" in ed_lower or "ª" in ed_lower:
-            return ed.rip()
-        return f"{ed.strip()} edición"
+            return ed_clean
+        return f"{ed_clean} edición"
 
 def pages_prefix(pags):
     if not pags:
         return ""
     pags = pags.strip()
-    # determinar si es rango
     if "-" in pags or "–" in pags:
         return f"pp. {pags}"
     else:
         return f"p. {pags}"
 
 def normalize_date(date_str):
+    """
+    Intenta normalizar varias representaciones de fecha a dd/mm/YYYY.
+    Si no puede, devuelve el string original.
+    Nota: el formulario ahora pedirá solo AÑO en la mayoría de campos.
+    """
     if not date_str:
         return ""
     d = date_str.strip()
-    # try several formats
     formats_try = [
         "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %B %Y",
         "%d de %B de %Y", "%d/%m/%y", "%d-%m-%y"
@@ -89,14 +93,12 @@ def normalize_date(date_str):
             return dt.strftime("%d/%m/%Y")
         except Exception:
             continue
-    # if numeric-only and 8 chars like 11081980 -> try ddmmyyyy
     if re.fullmatch(r"\d{8}", d):
         try:
             dt = datetime.strptime(d, "%d%m%Y")
             return dt.strftime("%d/%m/%Y")
         except Exception:
             pass
-    # fallback: return original but warn later
     return d
 
 # ---------------- Autor formatting ----------------
@@ -108,60 +110,51 @@ def formatear_autor(a, html=False):
     if ape2:
         apellidos += f" {versalitas(ape2)}"
     if html:
-        apellidos_html = f"{smallcaps_html(apellidos)}"
+        apellidos_html = smallcaps_html(apellidos)
         return f"{apellidos_html}, {nom}"
     else:
         return f"{apellidos}, {nom}"
 
 def formatear_autores(autores, html=False, y_otros_threshold=4):
-    # autores: lista de dicts {'apellido1','apellido2','nombre'}
-    autores = [a for a in autores if (a.get('apellido1') or a.get('nombre'))]
-    n = len(autores)
+    autores_validos = [a for a in autores if (a.get('apellido1') or a.get('nombre'))]
+    n = len(autores_validos)
     if n == 0:
         return ""
     def formato(a):
         return formatear_autor(a, html=html)
-    # Norma RChD: si 4 o más autores -> primer autor y otros
     if n >= y_otros_threshold:
-        return f"{formato(autores[0])} y otros" if not html else f"{formato(autores[0])} y otros"
+        return f"{formato(autores_validos[0])} y otros"
     if n == 1:
-        return formato(autores[0])
+        return formato(autores_validos[0])
     elif 2 <= n <= 3:
-        # separar por "y" para el último
-        parts = [formato(a) for a in autores]
+        parts = [formato(a) for a in autores_validos]
         return " y ".join(parts)
     else:
-        return f"{formato(autores[0])} y otros"
+        return f"{formato(autores_validos[0])} y otros"
 
 # ---------------- Cita abreviada ----------------
 def cita_abreviada(autores, año, paginas=None, tomo=None, tipo=None, libro_y_otros=False, y_otros_threshold=4):
-    autores = [a for a in autores if (a.get('apellido1') or a.get('nombre'))]
-    n = len(autores)
-    tomo_part = f" Tomo {to_roman(tomo)}" if tomo and tomo.isdigit() else (f" {tomo}" if tomo else "")
+    autores_validos = [a for a in autores if (a.get('apellido1') or a.get('nombre'))]
+    n = len(autores_validos)
+    tomo_part = f" Tomo {to_roman(tomo)}" if tomo and str(tomo).isdigit() else (f" {tomo}" if tomo else "")
     pag_part = ""
     if paginas:
         pag_part = f", {pages_prefix(paginas)}"
-    if tipo == "Norma":
-        # abreviada: CHILE, Ley 18.575; o CHILE, Constitución Política de la República
-        # This is handled elsewhere; return empty to be filled by norma-specific routine
-        return ""
-    if tipo == "Jurisprudencia":
-        # show tribunal and date or case name — handled in jurisprudencia-specific routine
+    if tipo == "Norma" or tipo == "Jurisprudencia":
         return ""
     if n == 0:
         return ""
-    # libros, teses, articulos
     if libro_y_otros or (n >= y_otros_threshold):
-        apellido = versalitas(autores[0].get('apellido1',''))
+        apellido = versalitas(autores_validos[0].get('apellido1',''))
         return f"{apellido} y otros ({año}){tomo_part}{pag_part}"
     if n == 1:
-        apellido = versalitas(autores[0].get('apellido1',''))
+        apellido = versalitas(autores_validos[0].get('apellido1',''))
         return f"{apellido} ({año}){tomo_part}{pag_part}"
     elif 2 <= n <= 3:
-        apellidos = " y ".join([versalitas(a.get('apellido1','')) for a in autores])
+        apellidos = " y ".join([versalitas(a.get('apellido1','')) for a in autores_validos])
         return f"{apellidos} ({año}){pag_part}"
     else:
-        apellido = versalitas(autores[0].get('apellido1',''))
+        apellido = versalitas(autores_validos[0].get('apellido1',''))
         return f"{apellido} y otros ({año}){pag_part}"
 
 # ---------------- Generadores por tipo ----------------
@@ -174,10 +167,7 @@ def libro(datos, y_otros_threshold=4):
     ciudad = datos.get('ciudad','').strip()
     editorial = datos.get('editorial','').strip()
 
-    tomo_str = ""
-    if tomo:
-        tomo_str = f", Tomo {to_roman(tomo)}" if tomo.isdigit() else f", {tomo}"
-
+    tomo_str = f", Tomo {to_roman(tomo)}" if tomo and tomo.isdigit() else (f", {tomo}" if tomo else "")
     ed_str = ""
     if edicion:
         if edicion.isdigit():
@@ -187,18 +177,9 @@ def libro(datos, y_otros_threshold=4):
         else:
             ed_str = f", {edicion}" if "ed" in edicion.lower() or "edición" in edicion.lower() else f", {edicion} edición"
 
-    parent_parts = []
-    if ciudad:
-        parent_parts.append(ciudad)
-    if editorial:
-        parent_parts.append(editorial)
-    if ed_str:
-        # ed_str includes leading comma, strip it
-        parent_parts.append(ed_str.lstrip(', ').strip())
-
+    parent_parts = [p for p in [ciudad, editorial, ed_str.lstrip(', ').strip() if ed_str else ""] if p]
     ciudad_str = f" ({', '.join(parent_parts)})" if parent_parts else ""
-    ref = f"{autores_html} ({año}): {titulo_html}{tomo_str}{ciudad_str}."
-    return ref
+    return f"{autores_html} ({año}): {titulo_html}{tomo_str}{ciudad_str}."
 
 def traduccion_libro(datos, y_otros_threshold=4):
     autores_html = formatear_autores(datos.get('autores', []), html=True, y_otros_threshold=y_otros_threshold)
@@ -208,11 +189,7 @@ def traduccion_libro(datos, y_otros_threshold=4):
     traductor = datos.get('traductor','').strip()
     ciudad = datos.get('ciudad','').strip()
     editorial = datos.get('editorial','').strip()
-    anos = ""
-    if año_original:
-        anos = f"[{año_original}] {año}"
-    else:
-        anos = año
+    anos = f"[{año_original}] {año}" if año_original else año
     return f"{autores_html} ({anos}): {titulo_html} (trad. {traductor}, {ciudad}, {editorial})."
 
 def capitulo_libro(datos, y_otros_threshold=4):
@@ -225,19 +202,19 @@ def capitulo_libro(datos, y_otros_threshold=4):
     editorial = datos.get('editorial','').strip()
     paginas = datos.get('paginas','').strip()
     paginas_part = f" pp. {paginas}" if paginas else ""
-    # ejemplo RChD: AUTOR (1998): “Título del capítulo”, en EDITOR (edit.), TÍTULO LIBRO (Ciudad, Editorial) pp. 101-146.
-    ref = f"{autor_html} ({año}): \"{titulo_cap}\", en {editores_html} (edit.), {titulo_libro_html} ({ciudad}, {editorial}){paginas_part}."
-    return ref
+    return f"{autor_html} ({año}): \"{titulo_cap}\", en {editores_html} (edit.), {titulo_libro_html} ({ciudad}, {editorial}){paginas_part}."
 
 def articulo_revista(datos, y_otros_threshold=4):
     autores_html = formatear_autores(datos.get('autores', []), html=True, y_otros_threshold=y_otros_threshold)
-    titulo_art = datos.get('titulo','').strip()  # article title NOT italic
+    titulo_art = datos.get('titulo','').strip()
     revista_html = f"<i>{datos.get('revista','')}</i>" if datos.get('revista') else ""
     año = datos.get('año','').strip()
     volumen = datos.get('volumen','').strip()
     numero = datos.get('numero','').strip()
     paginas = datos.get('paginas','').strip()
     doi = datos.get('doi','').strip()
+    url = datos.get('url','').strip()
+
     ref = f"{autores_html} ({año}): \"{titulo_art}\", {revista_html}"
     if volumen:
         ref += f", vol. {volumen}"
@@ -247,6 +224,8 @@ def articulo_revista(datos, y_otros_threshold=4):
         ref += f": pp. {paginas}"
     if doi:
         ref += f". DOI: {doi}"
+    if url:
+        ref += f". Disponible en: {url}"
     return ref + "."
 
 def norma(datos):
@@ -255,55 +234,70 @@ def norma(datos):
     nombre = datos.get('nombre_norma','').strip()
     numero = datos.get('numero','').strip()
     organismo = datos.get('organismo','').strip()
-    fecha_raw = datos.get('fecha','').strip()
-    fecha = normalize_date(fecha_raw) if fecha_raw else ""
-    # construir referencia completa y abreviada (abreviada sin fecha)
-    if "constit" in tipo_norma.lower() or "constitución" in nombre.lower() or "constitución" in tipo_norma.lower():
-        # Constitución
-        referencia = f"{pais}, <i>{nombre if nombre else 'Constitución Política de la República'}</i>"
-        referencia += f" ({fecha})" if fecha else ""
-        abreviada = f"{pais}, {nombre if nombre else 'Constitución Política de la República'}"
-        return referencia + ".", abreviada
-    if "ley" in tipo_norma.lower() or tipo_norma.lower().startswith("ley") or (numero and numero.isdigit()):
-        # Ley: CHILE, Ley N° 21.171. Nombre en cursiva (si existe). (dd/mm/yyyy)
+    año = datos.get('año','').strip()
+
+    # Constitución
+    if "constit" in tipo_norma.lower() or "constitución" in nombre.lower():
+        ref = f"{pais}, <i>{nombre or tipo_norma}</i>"
+        ref += f" ({año})" if año else ""
+        return ref + ".", f"{pais}, {nombre or tipo_norma}"
+
+    # Ley
+    if "ley" in tipo_norma.lower():
         num_part = f"Ley N° {numero}" if numero else "Ley"
-        referencia = f"{pais}, {num_part}"
+        ref = f"{pais}, {num_part}"
         if nombre:
-            referencia += f". <i>{nombre}</i>"
-        referencia += f" ({fecha})" if fecha else ""
+            ref += f". <i>{nombre}</i>"
+        ref += f" ({año})" if año else ""
         abreviada = f"{pais}, {num_part}"
-        return referencia + ".", abreviada
-    # Decretos Supremos: permitir organismo
-    if "decreto" in tipo_norma.lower() and "supremo" in tipo_norma.lower() or "decreto supremo" in tipo_norma.lower():
-        organismo_part = f", {versalitas(organismo)}" if organismo else ""
-        num_part = f"Decreto Supremo {numero}" if numero else "Decreto Supremo"
-        referencia = f"{pais}{organismo_part}, {num_part}"
-        if nombre:
-            referencia += f", <i>{nombre}</i>"
-        referencia += f" ({fecha})" if fecha else ""
-        abreviada = f"{pais}, {num_part}"
-        return referencia + ".", abreviada
+        return ref + ".", abreviada
+
     # Código
-    if "código" in tipo_norma.lower() or "código" in nombre.lower():
-        referencia = f"{pais}, <i>{nombre if nombre else tipo_norma}</i>"
-        referencia += f" ({fecha})" if fecha else " (s.d.)"
-        abreviada = f"{pais}, {nombre if nombre else tipo_norma}"
-        return referencia + ".", abreviada
-    # fallback general
-    referencia = f"{pais}, {tipo_norma if tipo_norma else nombre}"
+    if "código" in tipo_norma.lower() or "codigo" in tipo_norma.lower():
+        ref = f"{pais}, <i>{nombre or tipo_norma}</i>"
+        ref += f" ({año})" if año else " (s.d.)"
+        abreviada = f"{pais}, {nombre or tipo_norma}"
+        return ref + ".", abreviada
+
+    # Decreto Supremo / Reglamento / Decreto / Oficio / Circular
+    if any(k in tipo_norma.lower() for k in ["decreto", "reglamento", "oficio", "circular"]) or tipo_norma:
+        org_part = f", {versalitas(organismo)}" if organismo else ""
+        num_part = f" {numero}" if numero else ""
+        ref = f"{pais}{org_part}, {tipo_norma}{num_part}"
+        if nombre:
+            ref += f", <i>{nombre}</i>"
+        ref += f" ({año})" if año else ""
+        abreviada = f"{pais}, {tipo_norma}{num_part}"
+        return ref + ".", abreviada
+
+    # Tratado internacional o convención
+    if "tratado" in tipo_norma.lower() or "convención" in tipo_norma.lower():
+        ref = f"<i>{nombre or tipo_norma}</i>"
+        ref += f" ({año})" if año else ""
+        return ref + ".", f"{nombre or tipo_norma}"
+
+    # Instrumento UE
+    if any(k in tipo_norma.lower() for k in ["directiva", "reglamento", "decisión"]):
+        ref = f"UNIÓN EUROPEA, <i>{nombre or tipo_norma}</i>"
+        ref += f", de {año}" if año else ""
+        return ref + ".", f"UNIÓN EUROPEA, {nombre or tipo_norma}"
+
+    # fallback
+    ref = f"{pais}, {tipo_norma or nombre}"
     if numero:
-        referencia += f" {numero}"
+        ref += f" {numero}"
     if nombre and tipo_norma:
-        referencia += f". <i>{nombre}</i>"
-    referencia += f" ({fecha})" if fecha else ""
-    abreviada = f"{pais}, {tipo_norma if tipo_norma else nombre}"
-    return referencia + ".", abreviada
+        ref += f". <i>{nombre}</i>"
+    ref += f" ({año})" if año else ""
+    abreviada = f"{pais}, {tipo_norma or nombre}"
+    return ref + ".", abreviada
 
 def jurisprudencia(datos):
     estado = datos.get('estado','').strip()
     tribunal = datos.get('tribunal','').strip()
-    fecha_raw = datos.get('fecha','').strip()
-    fecha = normalize_date(fecha_raw) if fecha_raw else ""
+    año = datos.get('año','').strip()
+    fecha = datos.get('fecha','').strip()  # keep if they prefer full date
+    fecha_norm = normalize_date(fecha) if fecha else ""
     rol = datos.get('rol','').strip()
     nombre_caso = datos.get('nombre_caso','').strip()
     info_extra = datos.get('info_extra','').strip()
@@ -312,11 +306,10 @@ def jurisprudencia(datos):
     inicio = f"{versalitas(estado)}, " if estado else ""
     inicio += f"{tribunal}" if tribunal else ""
     ref = inicio
-    if fecha:
-        if ref:
-            ref += f", {fecha}"
-        else:
-            ref = fecha
+    if año:
+        ref += f", {año}"
+    elif fecha_norm:
+        ref += f", {fecha_norm}"
     if rol:
         ref += f", rol {rol}"
     if nombre_caso:
@@ -325,9 +318,98 @@ def jurisprudencia(datos):
         ref += f", {info_extra}"
     if fuente:
         ref += f". Fuente: {fuente}"
-    # abreviada: tribunal, fecha (sin rol ni tipo)
-    abre = f"{tribunal}, {fecha}" if tribunal and fecha else (tribunal or fecha)
+    abre = f"{tribunal}, {año or fecha_norm}" if tribunal and (año or fecha_norm) else tribunal or (año or fecha_norm)
     return ref + ".", abre
+
+def jurisprudencia_internacional(datos):
+    tribunal = versalitas(datos.get('tribunal','')).strip()
+    nombre_caso = datos.get('nombre_caso','').strip()
+    fecha = datos.get('fecha','').strip()
+    serie = datos.get('serie','').strip()
+
+    ref = f"{tribunal}, <i>{nombre_caso}</i>"
+    if fecha:
+        ref += f", Sentencia de {fecha}"
+    if serie:
+        ref += f" ({serie})"
+    abre = f"{tribunal}, {nombre_caso} ({fecha})" if fecha else f"{tribunal}, {nombre_caso}"
+    return ref + ".", abre
+
+def decreto_oficio(datos):
+    pais = versalitas(datos.get('pais', 'CHILE'))
+    organismo = datos.get('organismo', '').strip()
+    tipo = datos.get('tipo', '').strip()
+    numero = datos.get('numero', '').strip()
+    titulo = datos.get('titulo', '').strip()
+    año = datos.get('año','').strip()
+
+    org_part = f", {versalitas(organismo)}" if organismo else ""
+    num_part = f" {numero}" if numero else ""
+    ref = f"{pais}{org_part}, {tipo}{num_part}"
+    if titulo:
+        ref += f", <i>{titulo}</i>"
+    if año:
+        ref += f" ({año})"
+    abreviada = f"{pais}, {tipo}{num_part}"
+    return ref + ".", abreviada
+
+def proyecto_ley(datos):
+    pais = versalitas(datos.get('pais', 'CHILE'))
+    nombre = datos.get('nombre', '').strip()
+    boletin = datos.get('boletin', '').strip()
+    año = datos.get('año','').strip()
+
+    ref = f"{pais}, <i>{nombre}</i>" if nombre else f"{pais}, Proyecto de ley"
+    if boletin:
+        ref += f" (Boletín N° {boletin}"
+        if año:
+            ref += f", {año})"
+        else:
+            ref += ")"
+    elif año:
+        ref += f" ({año})"
+    abreviada = f"{pais}, Proyecto de ley {boletin or ''}".strip()
+    return ref + ".", abreviada
+
+def historia_ley(datos):
+    pais = versalitas(datos.get('pais', 'CHILE'))
+    numero = datos.get('numero', '').strip()
+    titulo = datos.get('titulo', '').strip()
+    año = datos.get('año','').strip()
+
+    ref = f"{pais}, <i>Historia de la Ley N° {numero}"
+    if titulo:
+        ref += f", {titulo}</i>"
+    else:
+        ref += "</i>"
+    if año:
+        ref += f" ({año})"
+    abreviada = f"{pais}, Historia de la Ley N° {numero}"
+    return ref + ".", abreviada
+
+def documento_internacional(datos):
+    organismo = versalitas(datos.get('organismo', '')).strip()
+    titulo = datos.get('titulo', '').strip()
+    año = datos.get('año','').strip()
+
+    ref = f"{organismo}, <i>{titulo}</i>" if organismo else f"<i>{titulo}</i>"
+    if año:
+        ref += f" ({año})"
+    abreviada = f"{organismo}, {titulo}" if organismo else titulo
+    return ref + ".", abreviada
+
+def instrumento_conferencia(datos):
+    nombre = datos.get('nombre', '').strip()
+    conferencia = datos.get('conferencia', '').strip()
+    año = datos.get('año','').strip()
+
+    ref = f"<i>{nombre}</i>" if nombre else ""
+    if conferencia:
+        ref += f", {conferencia}"
+    if año:
+        ref += f" ({año})"
+    abreviada = nombre
+    return ref + ".", abreviada
 
 def web(datos):
     autores = datos.get('autores', [])
@@ -335,17 +417,13 @@ def web(datos):
     año = datos.get('año','').strip()
     titulo = datos.get('titulo','').strip()
     url = datos.get('url','').strip()
-    fecha_consulta_raw = datos.get('fecha_consulta','').strip()
-    fecha_consulta = normalize_date(fecha_consulta_raw) if fecha_consulta_raw else ""
-    if autores:
-        autor_text = formatear_autores(autores, html=False)
-    else:
-        autor_text = autor_sin if autor_sin else ""
-    ref = f"{autor_text} ({año}): {titulo}, Disponible en: {url}."
+    fecha_consulta = datos.get('fecha_consulta','').strip()
+
+    autor_text = formatear_autores(autores, html=False) if autores else autor_sin
+    ref = f"{autor_text} ({año}): {titulo}, Disponible en: {url}." if autor_text or titulo else f"{url}"
     if fecha_consulta:
         ref += f" Fecha de consulta: {fecha_consulta}."
-    # abreviada: AUTOR (AÑO) o SITIO (AÑO)
-    abre = f"{versalitas(autor_text) if autor_text else autor_sin} ({año})" if año else (versalitas(autor_text) or autor_sin)
+    abre = f"{versalitas(autor_text)} ({año})" if autor_text and año else versalitas(autor_text) or autor_sin
     return ref, abre
 
 def tesis(datos, y_otros_threshold=4):
@@ -365,14 +443,20 @@ TIPOS = {
     "Capítulo de libro": lambda d, config: capitulo_libro(d, y_otros_threshold=config['y_otros_threshold']),
     "Artículo de revista": lambda d, config: articulo_revista(d, y_otros_threshold=config['y_otros_threshold']),
     "Norma": lambda d, config: norma(d),
+    "Decreto / Oficio / Reglamento": lambda d, config: decreto_oficio(d),
+    "Proyecto de ley": lambda d, config: proyecto_ley(d),
+    "Historia de la ley": lambda d, config: historia_ley(d),
+    "Documento internacional (ONU, OEA, etc.)": lambda d, config: documento_internacional(d),
+    "Instrumento emanado de congreso / conferencia": lambda d, config: instrumento_conferencia(d),
     "Jurisprudencia": lambda d, config: jurisprudencia(d),
+    "Jurisprudencia internacional": lambda d, config: jurisprudencia_internacional(d),
     "Página web o blog": lambda d, config: web(d),
     "Tesis": lambda d, config: tesis(d, y_otros_threshold=config['y_otros_threshold'])
 }
 
 # ---------------- Streamlit UI ----------------
 st.set_page_config(page_title="Citador RChD Consejeria Academica Derecho UC x >> Avanzar", layout="wide")
-st.title("Citador RChD Consejeria Academica Derecho UC x >> Avanzar (RChD 2025)")
+st.title("Citador RChD Consejería Académica Derecho UC x >> Avanzar (RChD 2025)")
 st.warning("⚠️ Recuerda que las versalitas y las cursivas pueden no copiarse correctamente en algunos navegadores o procesadores de texto. Verifica siempre la cita final manualmente.")
 
 with st.sidebar:
@@ -392,7 +476,6 @@ num_autores = st.number_input("Número de autores (rellenar 0 si no aplica)", mi
 if "historial_citas" not in st.session_state:
     st.session_state["historial_citas"] = []
 
-# Helper to add authors with keys unique
 def agregar_autores_ui(num, prefix="", show_help=True):
     autores = []
     for i in range(num):
@@ -403,7 +486,6 @@ def agregar_autores_ui(num, prefix="", show_help=True):
         autores.append({'apellido1': apellido1.strip(), 'apellido2': apellido2.strip(), 'nombre': nombre.strip()})
     return autores
 
-# Ajuste para libros con N autores -> solo pedir 1 si umbral se alcanza
 libro_y_otros = False
 autores = []
 if tipo == "Libro" and num_autores >= config['y_otros_threshold']:
@@ -415,7 +497,7 @@ else:
 
 datos = {'autores': autores}
 
-# Inputs dinámicos por tipo
+# Inputs dinámicos por tipo (Año en la mayoría)
 if tipo == "Libro":
     datos.update({
         'año': st.text_input("Año de publicación"),
@@ -466,17 +548,60 @@ elif tipo == "Norma":
         'numero': st.text_input("Número (ej: 18.575, 21.171) — dejar vacío si no aplica"),
         'nombre_norma': st.text_input("Nombre o denominación legal (si aplica)"),
         'organismo': st.text_input("Ministerio u órgano (opcional, ej: Ministerio de Salud)"),
-        'fecha': st.text_input("Fecha (opcional) - formato recomendado dd/mm/aaaa")
+        'año': st.text_input("Año (opcional)")
+    })
+elif tipo == "Decreto / Oficio / Reglamento":
+    datos.update({
+        'pais': st.text_input("País (ej: Chile)", value="Chile"),
+        'organismo': st.text_input("Ministerio u organismo (opcional, ej: Ministerio del Interior)"),
+        'tipo': st.text_input("Tipo (ej: Decreto, Reglamento, Oficio, Circular)"),
+        'numero': st.text_input("Número (ej: 1.234)"),
+        'titulo': st.text_input("Título o descripción (en cursiva)"),
+        'año': st.text_input("Año (opcional)")
+    })
+elif tipo == "Proyecto de ley":
+    datos.update({
+        'pais': st.text_input("País (ej: Chile)", value="Chile"),
+        'nombre': st.text_input("Nombre del proyecto (en cursiva)"),
+        'boletin': st.text_input("Boletín N° (ej: 12.345-04)"),
+        'año': st.text_input("Año (opcional)")
+    })
+elif tipo == "Historia de la ley":
+    datos.update({
+        'pais': st.text_input("País (ej: Chile)", value="Chile"),
+        'numero': st.text_input("Número de ley (ej: 21.400)"),
+        'titulo': st.text_input("Título o descripción (opcional, en cursiva)"),
+        'año': st.text_input("Año (opcional)")
+    })
+elif tipo == "Documento internacional (ONU, OEA, etc.)":
+    datos.update({
+        'organismo': st.text_input("Organismo internacional (ej: Organización de las Naciones Unidas)"),
+        'titulo': st.text_input("Título del documento (en cursiva)"),
+        'año': st.text_input("Año (opcional)")
+    })
+elif tipo == "Instrumento emanado de congreso / conferencia":
+    datos.update({
+        'nombre': st.text_input("Nombre del instrumento (en cursiva, ej: Declaración de Río sobre Medio Ambiente y Desarrollo)"),
+        'conferencia': st.text_input("Congreso o conferencia (opcional, ej: Conferencia de las Naciones Unidas sobre Medio Ambiente y Desarrollo)"),
+        'año': st.text_input("Año (opcional)")
     })
 elif tipo == "Jurisprudencia":
     datos.update({
         'estado': st.text_input("Estado / País (opcional, ej: Chile)"),
         'tribunal': st.text_input("Tribunal (ej: Corte Suprema)"),
-        'fecha': st.text_input("Fecha (ej: 23/03/2021)"),
+        'año': st.text_input("Año (opcional)"),
+        'fecha': st.text_input("Fecha completa (opcional)"),
         'rol': st.text_input("Rol / RIT / RUC (opcional)"),
         'nombre_caso': st.text_input("Nombre del caso (opcional)"),
         'info_extra': st.text_input("Info extra (ej: 'protección', tomo, revista)"),
         'fuente': st.text_input("Fuente / base de datos / URL (opcional)")
+    })
+elif tipo == "Jurisprudencia internacional":
+    datos.update({
+        'tribunal': st.text_input("Tribunal internacional (ej: Corte Interamericana de DD.HH.)"),
+        'nombre_caso': st.text_input("Nombre del caso (ej: Velásquez Rodríguez vs. Honduras)"),
+        'fecha': st.text_input("Fecha (opcional)"),
+        'serie': st.text_input("Serie / número (opcional)")
     })
 elif tipo == "Página web o blog":
     if num_autores == 0:
@@ -485,8 +610,12 @@ elif tipo == "Página web o blog":
         'año': st.text_input("Año (o año del sitio, si aplica)"),
         'titulo': st.text_input("Título de la página / entrada"),
         'url': st.text_input("URL"),
-        'fecha_consulta': st.text_input("Fecha de consulta (opcional) - dd/mm/aaaa")
+        'fecha_consulta': st.text_input("Fecha de consulta (opcional)")
     })
+elif tipo == "Documento internacional (ONU, OEA, etc.)":
+    pass  # ya cubierto arriba
+elif tipo == "Instrumento emanado de congreso / conferencia":
+    pass
 elif tipo == "Tesis":
     datos.update({
         'año': st.text_input("Año"),
@@ -498,30 +627,20 @@ elif tipo == "Tesis":
 
 # ---------------- Generación ----------------
 if st.button("Generar cita"):
-    # generar referencia HTML (para mostrar con cursivas/versalitas) y versión texto limpia
     gen = TIPOS[tipo](datos, config)
-    # algunas funciones (norma, web, jurisprudencia) devuelven tuplas (referencia, abreviada)
     ref_html = ""
     cita_texto = ""
     ref_texto = ""
-    if tipo == "Norma":
+    # Algunas funciones devuelven (ref, abreviada)
+    if tipo in ["Norma", "Decreto / Oficio / Reglamento", "Proyecto de ley", "Historia de la ley",
+                "Documento internacional (ONU, OEA, etc.)", "Instrumento emanado de congreso / conferencia",
+                "Jurisprudencia", "Jurisprudencia internacional", "Página web o blog"]:
+        # TIPOS devuelve una tupla (ref, abre)
         ref_html, abre = gen
-        # abre viene sin HTML
-        cita_texto = abre
-        ref_texto = limpiar_html(ref_html)
-    elif tipo == "Página web o blog":
-        ref, abre = gen
-        ref_html = ref
-        cita_texto = abre
-        ref_texto = limpiar_html(ref_html)
-    elif tipo == "Jurisprudencia":
-        ref, abre = gen
-        ref_html = ref
         cita_texto = abre
         ref_texto = limpiar_html(ref_html)
     else:
         ref_html = gen
-        # crear cita abreviada para tipos bibliográficos
         cita_texto = cita_abreviada(
             autores,
             datos.get('año',''),
@@ -531,21 +650,18 @@ if st.button("Generar cita"):
             libro_y_otros=libro_y_otros,
             y_otros_threshold=config['y_otros_threshold']
         )
-        # En caso de que cita_abreviada no haya devuelto nada (p.ej. web/norma) genera basado en reglas simples
         if not cita_texto and tipo in ["Tesis", "Artículo de revista", "Capítulo de libro", "Libro", "Traducción de libro"]:
             cita_texto = cita_abreviada(autores, datos.get('año',''), paginas=datos.get('paginas',''),
                                         tomo=datos.get('tomo',''), tipo=tipo,
                                         libro_y_otros=libro_y_otros, y_otros_threshold=config['y_otros_threshold'])
         ref_texto = limpiar_html(ref_html)
 
-    # guardar en historial
     st.session_state.historial_citas.append({
         "tipo": tipo,
         "referencia": ref_texto,
         "cita": cita_texto
     })
 
-    # Mostrar resultados
     st.subheader("Referencia completa:")
     st.markdown(ref_html, unsafe_allow_html=True)
     st.text_area("Copiar referencia completa:", value=ref_texto, height=120)
@@ -561,6 +677,5 @@ if st.session_state.historial_citas:
         st.markdown(f"**{i}. {item['tipo']}**")
         st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
         st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
-
 
 

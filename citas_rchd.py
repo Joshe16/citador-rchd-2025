@@ -670,13 +670,34 @@ if st.button("Generar cita"):
     st.write(cita_texto)
     st.text_area("Copiar cita abreviada:", value=cita_texto, height=60)
 
-# ---------------- Mostrar historial ----------------
-if st.session_state.historial_citas:
+# ---------------- Mostrar historial (corregido y estable) ----------------
+if "historial_citas" in st.session_state and len(st.session_state.historial_citas) > 0:
     st.subheader("Historial de citas generadas:")
-    for i, item in enumerate(reversed(st.session_state.historial_citas), 1):
-        st.markdown(f"**{i}. {item['tipo']}**")
-        st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
-        st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
 
+    # Asignamos un ID único a cada cita para evitar que los widgets se confundan
+    for idx, item in enumerate(reversed(st.session_state.historial_citas)):
+        unique_id = f"{idx}_{hash(item['referencia']) % 10000}"
 
+        with st.expander(f"{len(st.session_state.historial_citas) - idx}. {item['tipo']}"):
+            st.markdown("**Referencia completa:**")
+            st.text_area(
+                "Referencia",
+                value=item['referencia'],
+                height=80,
+                key=f"hist_ref_{unique_id}",
+                label_visibility="collapsed"
+            )
+
+            st.markdown("**Cita abreviada:**")
+            st.text_area(
+                "Cita abreviada",
+                value=item['cita'],
+                height=50,
+                key=f"hist_cit_{unique_id}",
+                label_visibility="collapsed"
+            )
+
+if st.button("🧹 Limpiar historial"):
+    st.session_state.historial_citas.clear()
+    st.experimental_rerun()
 

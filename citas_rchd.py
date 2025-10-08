@@ -373,6 +373,7 @@ TIPOS = {
 # ---------------- Streamlit UI ----------------
 st.set_page_config(page_title="Citador RChD Consejeria Academica Derecho UC x >> Avanzar", layout="wide")
 st.title("Citador RChD Consejeria Academica Derecho UC x >> Avanzar (RChD 2025)")
+st.warning("⚠️ Recuerda que las versalitas y las cursivas pueden no copiarse correctamente en algunos navegadores o procesadores de texto. Verifica siempre la cita final manualmente.")
 
 with st.sidebar:
     st.header("Ajustes")
@@ -560,5 +561,6 @@ if st.session_state.historial_citas:
         st.markdown(f"**{i}. {item['tipo']}**")
         st.text_area("Referencia:", value=item['referencia'], height=60, key=f"hist_ref_{i}")
         st.text_area("Cita abreviada:", value=item['cita'], height=40, key=f"hist_cit_{i}")
+
 
 
